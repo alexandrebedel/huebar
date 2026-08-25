@@ -46,20 +46,31 @@ public final class HueState {
             return
         }
         do {
-            async let lights = client.fetchLights()
-            async let rooms = client.fetchRooms()
-            async let scenes = client.fetchScenes()
-            async let grouped = client.fetchGroupedLights()
-            let built = Self.makeRooms(
-                lights: try await lights, rooms: try await rooms,
-                scenes: try await scenes, grouped: try await grouped
-            )
-            self.all = built.all
-            self.rooms = built.rooms
-            self.status = .ready
+            try await load(client)
         } catch {
-            status = .error("Bridge injoignable")
+            // Premier hit à froid : un retry silencieux évite un « Bridge injoignable »
+            // gratuit au lancement (le clic « Réessayer » marchait toujours du premier coup).
+            try? await Task.sleep(for: .milliseconds(700))
+            do {
+                try await load(client)
+            } catch {
+                status = .error("Bridge injoignable")
+            }
         }
+    }
+
+    private func load(_ client: any HueControlling) async throws {
+        async let lights = client.fetchLights()
+        async let rooms = client.fetchRooms()
+        async let scenes = client.fetchScenes()
+        async let grouped = client.fetchGroupedLights()
+        let built = Self.makeRooms(
+            lights: try await lights, rooms: try await rooms,
+            scenes: try await scenes, grouped: try await grouped
+        )
+        self.all = built.all
+        self.rooms = built.rooms
+        self.status = .ready
     }
 
     // MARK: - Actions (optimistes : mutation locale immédiate, resync si échec)

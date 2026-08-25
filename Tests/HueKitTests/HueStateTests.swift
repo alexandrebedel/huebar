@@ -66,6 +66,16 @@ private func makeReadyState() async -> (HueState, FakeClient) {
 }
 
 @MainActor
+@Test func refreshRetriesSilentlyAfterColdStartFailure() async {
+    // Premier hit à froid (ARP/TLS/Wi-Fi en veille) : les 4 fetches échouent une fois,
+    // le retry silencieux doit aboutir sans jamais montrer « Bridge injoignable ».
+    let (state, fake) = await makeReadyState()
+    fake.failuresRemaining = 4
+    await state.refresh()
+    #expect(state.status == .ready)
+}
+
+@MainActor
 @Test func setRoomBrightnessSendsDimming() async {
     let (state, fake) = await makeReadyState()
     await state.setRoomBrightness(id: "R1", 70)

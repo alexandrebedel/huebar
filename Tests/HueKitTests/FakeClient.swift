@@ -7,6 +7,14 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     var scenes: [HueScene] = []
     var grouped: [GroupedLight] = []
     var shouldFail = false
+    /// Fait échouer les N prochains appels (simule le premier hit à froid) — thread-safe,
+    /// refresh() lance ses 4 fetches en parallèle.
+    var failuresRemaining: Int {
+        get { failuresLock.withLock { _failuresRemaining } }
+        set { failuresLock.withLock { _failuresRemaining = newValue } }
+    }
+    private let failuresLock = NSLock()
+    private var _failuresRemaining = 0
 
     private(set) var lightUpdates: [(id: String, update: LightUpdate)] = []
     private(set) var groupedUpdates: [(id: String, update: LightUpdate)] = []
@@ -14,6 +22,12 @@ final class FakeClient: HueControlling, @unchecked Sendable {
 
     private func failIfNeeded() throws {
         if shouldFail { throw HueError.invalidResponse }
+        let mustFail = failuresLock.withLock {
+            guard _failuresRemaining > 0 else { return false }
+            _failuresRemaining -= 1
+            return true
+        }
+        if mustFail { throw HueError.invalidResponse }
     }
 
     func fetchLights() async throws -> [Light] { try failIfNeeded(); return lights }

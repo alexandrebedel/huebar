@@ -105,7 +105,9 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
         guard let url = URL(string: "https://\(config.bridgeIP)\(path)") else {
             throw HueError.invalidResponse
         }
-        var request = URLRequest(url: url, timeoutInterval: 2)
+        // 6 s : le premier hit à froid (ARP, TLS, Wi-Fi en veille) dépasse facilement 2 s,
+        // ce qui affichait « Bridge injoignable » à chaque lancement.
+        var request = URLRequest(url: url, timeoutInterval: 6)
         request.httpMethod = method
         request.httpBody = body
         request.setValue(config.appKey, forHTTPHeaderField: "hue-application-key")

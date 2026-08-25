@@ -62,6 +62,39 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     }
 }
 
+@Test func steadyMusicReachesUsefulBrightness() {
+    // Retour utilisateur : « intensité très faible en mode musique ». Avec un signal
+    // soutenu, chaque channel doit dépasser un niveau clairement visible.
+    for mode in SyncMode.allCases {
+        var mapper = LightMapper(mode: mode)
+        var colors: [ChannelColor] = []
+        for i in 0..<150 {
+            colors = mapper.map(frame: frame(rms: 0.3, bass: 0.5), channels: channels, time: Double(i) * 0.02)
+        }
+        for color in colors {
+            #expect(color.red + color.green + color.blue > 0.5, "\(mode) trop sombre")
+        }
+    }
+}
+
+@Test func colorTransitionsAreSmoothAcrossBeats() {
+    // Retour utilisateur : « pas smooth du tout sur les changements de couleur ».
+    // Même au beat (saut de teinte + flash), la variation par frame reste bornée.
+    var mapper = LightMapper(mode: .club)
+    var time = 0.0
+    var previous = mapper.map(frame: frame(), channels: channels, time: time)
+    for i in 1..<100 {
+        time += 0.02
+        let next = mapper.map(frame: frame(beat: i % 10 == 0), channels: channels, time: time)
+        for (a, b) in zip(previous, next) {
+            #expect(abs(a.red - b.red) < 0.45)
+            #expect(abs(a.green - b.green) < 0.45)
+            #expect(abs(a.blue - b.blue) < 0.45)
+        }
+        previous = next
+    }
+}
+
 @Test func silenceIsDimInBothModes() {
     for mode in SyncMode.allCases {
         var mapper = LightMapper(mode: mode)

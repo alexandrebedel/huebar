@@ -22,6 +22,7 @@ public struct LightMapper {
     private var smoothedRMS = 0.0
     private var smoothedBass = 0.0
     private var lastTime: Double?
+    private var smoothedOutput: [UInt8: (red: Double, green: Double, blue: Double)] = [:]
 
     public init(mode: SyncMode) {
         self.mode = mode
@@ -33,10 +34,13 @@ public struct LightMapper {
         smoothedRMS += (min(1, frame.rms * 2.5) - smoothedRMS) * min(1, dt * 3)
         smoothedBass += (frame.bass - smoothedBass) * min(1, dt * 5)
 
-        switch mode {
-        case .club: return mapClub(frame: frame, channels: channels, dt: dt)
-        case .chill: return mapChill(frame: frame, channels: channels, dt: dt)
+        let targets = switch mode {
+        case .club: mapClub(frame: frame, channels: channels, dt: dt)
+        case .chill: mapChill(frame: frame, channels: channels, dt: dt)
         }
+        // Lissage de sortie par channel : les sauts de teinte/flash deviennent des
+        // transitions, sans tuer l'attaque (montée plus rapide que la descente).
+        return targets.map { smoothedColor($0, dt: dt) }
     }
 
     private mutating func mapClub(frame: AnalysisFrame, channels: [SyncChannel], dt: Double) -> [ChannelColor] {
@@ -47,8 +51,9 @@ public struct LightMapper {
         }
         flash = max(0, flash - dt * 6) // decay ~170 ms
 
-        let floorLevel = 0.06 + min(0.5, smoothedBass * 0.6)
-        let brightness = min(1, floorLevel + flash * 0.9)
+        // Basses soutenues -> déjà lumineux (retour utilisateur : trop faible avant) ;
+        // le silence reste sombre.
+        let brightness = min(1, 0.08 + min(0.75, smoothedBass * 0.85) + flash * 0.7)
         let saturation = max(0.55, 1 - min(0.4, frame.high * 0.5))
 
         return channels.map { channel in
@@ -63,13 +68,31 @@ public struct LightMapper {
         let spectralPull = min(0.3, frame.high * 0.4) - min(0.2, frame.bass * 0.2)
         baseHue = (baseHue + dt * (0.008 + spectralPull * 0.02) + 1).truncatingRemainder(dividingBy: 1)
 
-        let brightness = min(1, 0.10 + smoothedRMS * 0.6)
+        let brightness = min(1, 0.12 + smoothedRMS * 1.1)
         let saturation = 0.6
 
         return channels.map { channel in
             let hue = (baseHue + channel.x * 0.04 + 1).truncatingRemainder(dividingBy: 1)
             return color(channel: channel.id, hue: hue, saturation: saturation, value: brightness)
         }
+    }
+
+    /// EMA asymétrique par composante : l'attaque (τ court) garde le punch des beats,
+    /// la descente (τ long) évite les flips secs de couleur.
+    private mutating func smoothedColor(_ target: ChannelColor, dt: Double) -> ChannelColor {
+        let (tauUp, tauDown) = mode == .club ? (0.05, 0.22) : (0.30, 0.45)
+        guard let previous = smoothedOutput[target.channel] else {
+            smoothedOutput[target.channel] = (target.red, target.green, target.blue)
+            return target
+        }
+        func step(_ prev: Double, _ next: Double) -> Double {
+            prev + (next - prev) * min(1, dt / (next > prev ? tauUp : tauDown))
+        }
+        let value = (red: step(previous.red, target.red),
+                     green: step(previous.green, target.green),
+                     blue: step(previous.blue, target.blue))
+        smoothedOutput[target.channel] = value
+        return ChannelColor(channel: target.channel, red: value.red, green: value.green, blue: value.blue)
     }
 
     /// HSV -> RGB (h, s, v dans 0...1).
