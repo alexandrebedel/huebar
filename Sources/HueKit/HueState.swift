@@ -280,6 +280,17 @@ public final class HueState {
         }
     }
 
+    /// Fige l'état actuel des lampes de la pièce en vraie scène sur le bridge.
+    public func captureScene(roomID: String, name: String) async {
+        guard let room = rooms.first(where: { $0.id == roomID }) else { return }
+        let actions = SceneCapture.actions(from: room.lights)
+        guard !actions.isEmpty else { return }
+        await perform { client in
+            try await client.createScene(name: name, groupID: roomID, actions: actions)
+        }
+        await refresh() // la nouvelle scène doit apparaître dans la grille
+    }
+
     /// Crée le scénario comme vraie scène de la pièce sur le bridge.
     public func saveScenario(roomID: String, _ scenario: GalleryScenario) async {
         guard let room = rooms.first(where: { $0.id == roomID }) else { return }

@@ -10,6 +10,8 @@ struct RoomDetailView: View {
     @State private var newName = ""
     @State private var roomColor: Color = .white
     @State private var colorTask: Task<Void, Never>?
+    @State private var capturing = false
+    @State private var captureName = ""
 
     var body: some View {
         ScrollView {
@@ -18,6 +20,15 @@ struct RoomDetailView: View {
                 HStack {
                     Text("Scènes").font(.headline)
                     Spacer()
+                    Button {
+                        captureName = ""
+                        capturing = true
+                    } label: {
+                        Label("Capturer", systemImage: "camera")
+                    }
+                    .controlSize(.small)
+                    .disabled(room.lights.isEmpty)
+                    .help("Créer une scène depuis l'état actuel des lampes")
                     Button {
                         showGallery = true
                     } label: {
@@ -41,6 +52,18 @@ struct RoomDetailView: View {
         }
         .sheet(isPresented: $showGallery) {
             GalleryView(state: state, roomID: room.id)
+        }
+        .alert("Scène depuis l'état actuel", isPresented: $capturing) {
+            TextField("Nom de la scène", text: $captureName)
+            Button("Créer") {
+                let trimmed = captureName.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty {
+                    Task { await state.captureScene(roomID: room.id, name: trimmed) }
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Fige l'éclairage actuel de la pièce (couleurs, luminosité, lampes éteintes).")
         }
     }
 

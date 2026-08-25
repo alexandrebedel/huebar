@@ -156,6 +156,36 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     #expect(fake.createdScenes[0].actions.count == 3)
 }
 
+@Test func captureReflectsCurrentLightModes() throws {
+    var colorMode = colorLight()
+    colorMode.on = OnState(on: true)
+    colorMode.colorTemperature?.mirek = nil // mode couleur : le bridge met mirek à null
+    var ctMode = whiteLight()
+    ctMode.on = OnState(on: true)
+    let off = colorLight(id: "L2", device: "D2") // éteinte
+
+    let actions = SceneCapture.actions(from: [colorMode, ctMode, off])
+    #expect(actions[0].target == ref("L1", "light"))
+    #expect(actions[0].action.color?.xy == XY(x: 0.3, y: 0.3))
+    #expect(actions[0].action.colorTemperature == nil)
+    #expect(actions[0].action.dimming?.brightness == 50)
+    #expect(actions[1].action.colorTemperature?.mirek == 366)
+    #expect(actions[1].action.color == nil)
+    #expect(actions[2].action.on == OnState(on: false))
+    #expect(actions[2].action.dimming == nil)
+    #expect(actions[2].action.color == nil)
+}
+
+@MainActor
+@Test func captureSceneCreatesSceneFromCurrentState() async {
+    let (state, fake) = await makeGalleryState()
+    await state.captureScene(roomID: "R1", name: "Mon ambiance")
+    #expect(fake.createdScenes.count == 1)
+    #expect(fake.createdScenes[0].name == "Mon ambiance")
+    #expect(fake.createdScenes[0].groupID == "R1")
+    #expect(fake.createdScenes[0].actions.count == 3)
+}
+
 @MainActor
 @Test func setRoomColorTintsColorLightsAndSendsOneGroupedPut() async {
     let (state, fake) = await makeGalleryState()
