@@ -5,16 +5,21 @@ import HueKit
 /// clic = appliquer aux lampes de la pièce, + = créer la scène sur le bridge.
 struct GalleryView: View {
     let state: HueState
-    let room: RoomModel
+    let roomID: String
     @Environment(\.dismiss) private var dismiss
     @State private var savedNames: Set<String> = []
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)]
 
+    /// Pièce lue en direct dans l'état : les ajouts/retraits re-partitionnent la galerie.
+    private var room: RoomModel? {
+        state.rooms.first { $0.id == roomID }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Galerie — \(room.name)").font(.title3.bold())
+                Text("Galerie — \(room?.name ?? "")").font(.title3.bold())
                 Spacer()
                 Button {
                     dismiss()
@@ -23,7 +28,7 @@ struct GalleryView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("Clic : appliquer aux lampes · ⊕ : ajouter comme scène de la pièce")
+            Text("Clic : appliquer aux lampes · ⊕ : ajouter comme scène · ⊖ : retirer")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ScrollView {
@@ -48,10 +53,15 @@ struct GalleryView: View {
         LazyVGrid(columns: columns, spacing: 12) {
             ForEach(scenarios) { scenario in
                 GalleryCard(scenario: scenario, isSaved: isSaved(scenario)) {
-                    Task { await state.applyScenario(roomID: room.id, scenario) }
+                    Task { await state.applyScenario(roomID: roomID, scenario) }
                 } onSave: {
                     savedNames.insert(scenario.name)
-                    Task { await state.saveScenario(roomID: room.id, scenario) }
+                    Task { await state.saveScenario(roomID: roomID, scenario) }
+                } onRemove: {
+                    savedNames.remove(scenario.name)
+                    if let scene = room?.scenes.first(where: { $0.metadata.name == scenario.name }) {
+                        Task { await state.deleteScene(id: scene.id) }
+                    }
                 }
             }
         }
@@ -67,7 +77,7 @@ struct GalleryView: View {
 
     private func isSaved(_ scenario: GalleryScenario) -> Bool {
         savedNames.contains(scenario.name)
-            || room.scenes.contains { $0.metadata.name == scenario.name }
+            || room?.scenes.contains { $0.metadata.name == scenario.name } == true
     }
 }
 
@@ -76,6 +86,7 @@ private struct GalleryCard: View {
     let isSaved: Bool
     let onApply: () -> Void
     let onSave: () -> Void
+    let onRemove: () -> Void
     @State private var hovering = false
 
     private var colors: [Color] {
@@ -92,14 +103,13 @@ private struct GalleryCard: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Spacer()
-                Button(action: onSave) {
-                    Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle.fill")
+                Button(action: isSaved ? onRemove : onSave) {
+                    Image(systemName: isSaved ? "minus.circle.fill" : "plus.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
-                .disabled(isSaved)
-                .help(isSaved ? "Déjà dans la pièce" : "Ajouter comme scène de la pièce")
+                .help(isSaved ? "Retirer la scène de la pièce" : "Ajouter comme scène de la pièce")
             }
             .padding(10)
         }

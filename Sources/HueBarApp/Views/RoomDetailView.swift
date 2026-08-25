@@ -35,7 +35,7 @@ struct RoomDetailView: View {
             .padding(20)
         }
         .sheet(isPresented: $showGallery) {
-            GalleryView(state: state, room: room)
+            GalleryView(state: state, roomID: room.id)
         }
     }
 

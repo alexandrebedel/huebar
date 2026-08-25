@@ -47,6 +47,11 @@ struct SceneCardView: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Supprimer la scène", role: .destructive) {
+                Task { await state.deleteScene(id: scene.id) }
+            }
+        }
     }
 
     private var gradientColors: [Color] {

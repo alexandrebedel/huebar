@@ -85,9 +85,19 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
         children: [ref("D1", "device"), ref("D2", "device"), ref("D3", "device")],
         services: [ref("G1", "grouped_light")])]
     fake.grouped = [GroupedLight(id: "G1", owner: ref("R1", "room"), on: OnState(on: false), dimming: nil)]
+    fake.scenes = [HueScene(id: "SC1", metadata: Metadata(name: "Savane"), group: ref("R1", "room"))]
     let state = HueState(client: fake)
     await state.refresh()
     return (state, fake)
+}
+
+@MainActor
+@Test func deleteSceneRemovesLocallyAndCallsBridge() async {
+    let (state, fake) = await makeGalleryState()
+    #expect(state.rooms[0].scenes.count == 1)
+    await state.deleteScene(id: "SC1")
+    #expect(state.rooms[0].scenes.isEmpty)
+    #expect(fake.deletedScenes == ["SC1"])
 }
 
 @MainActor

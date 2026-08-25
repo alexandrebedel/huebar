@@ -208,6 +208,20 @@ public final class HueState {
         }
     }
 
+    /// Supprime une scène du bridge (retrait local immédiat).
+    public func deleteScene(id: String) async {
+        for index in rooms.indices {
+            rooms[index].scenes.removeAll { $0.id == id }
+        }
+        if var zone = all {
+            zone.scenes.removeAll { $0.id == id }
+            all = zone
+        }
+        await perform { client in
+            try await client.deleteScene(id: id)
+        }
+    }
+
     /// Crée le scénario comme vraie scène de la pièce sur le bridge.
     public func saveScenario(roomID: String, _ scenario: GalleryScenario) async {
         guard let room = rooms.first(where: { $0.id == roomID }) else { return }
