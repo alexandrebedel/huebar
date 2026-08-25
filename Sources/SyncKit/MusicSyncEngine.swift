@@ -112,18 +112,10 @@ public final class MusicSyncEngine {
                 self.state = .error(message)
             }
         }
-        let frameBox = latestFrame
-        var analyzer: AudioAnalyzer?
-        var analyzerRate = 0.0
+        let pipeline = AnalysisPipeline(frameBox: latestFrame)
         try source.start { samples, sampleRate in
-            // Queue audio de la source — l'analyzer vit ici, jamais sur le MainActor.
-            if analyzer == nil || analyzerRate != sampleRate {
-                analyzer = AudioAnalyzer(sampleRate: sampleRate)
-                analyzerRate = sampleRate
-            }
-            if let frame = analyzer?.process(samples: samples) {
-                frameBox.withLock { $0 = frame }
-            }
+            // Queue audio série de la source — l'analyse ne touche jamais le MainActor.
+            pipeline.ingest(samples, sampleRate: sampleRate)
         }
     }
 
@@ -173,6 +165,29 @@ public final class MusicSyncEngine {
         case HueError.badStatus(let code): "Le bridge a refusé (HTTP \(code))"
         case let sourceError as AudioSourceError: "Audio : \(sourceError)"
         default: error.localizedDescription
+        }
+    }
+}
+
+/// Analyse hors MainActor. @unchecked : `analyzer`/`rate` ne sont touchés que depuis
+/// la queue audio SÉRIE de la source (invariant des AudioSource) ; la frame partagée
+/// passe par le lock.
+private final class AnalysisPipeline: @unchecked Sendable {
+    private var analyzer: AudioAnalyzer?
+    private var rate = 0.0
+    private let frameBox: OSAllocatedUnfairLock<AnalysisFrame>
+
+    init(frameBox: OSAllocatedUnfairLock<AnalysisFrame>) {
+        self.frameBox = frameBox
+    }
+
+    func ingest(_ samples: [Float], sampleRate: Double) {
+        if analyzer == nil || rate != sampleRate {
+            analyzer = AudioAnalyzer(sampleRate: sampleRate)
+            rate = sampleRate
+        }
+        if let frame = analyzer?.process(samples: samples) {
+            frameBox.withLock { $0 = frame }
         }
     }
 }

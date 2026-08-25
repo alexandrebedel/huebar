@@ -50,11 +50,11 @@ private final class FakeTransport: EntertainmentTransport, @unchecked Sendable {
 
 private final class FakeSource: AudioSource {
     var displayName = "Fake"
-    var onFailure: ((String) -> Void)?
-    private(set) var callback: (([Float], Double) -> Void)?
+    var onFailure: (@Sendable (String) -> Void)?
+    private(set) var callback: (@Sendable ([Float], Double) -> Void)?
     private(set) var stopCount = 0
 
-    func start(onSamples: @escaping ([Float], Double) -> Void) throws {
+    func start(onSamples: @escaping @Sendable ([Float], Double) -> Void) throws {
         callback = onSamples
     }
 
@@ -184,6 +184,27 @@ private func makeEngine(clientKey: String? = "05C37B87131DA78EA028CE0429AE3F94")
     await engine.start(source: source)
     let loud = (0..<4096).map { i in Float(0.8 * sin(2.0 * .pi * 60 * Double(i) / 48_000)) }
     source.callback?(loud, 48_000)
+    try await Task.sleep(for: .milliseconds(80))
+    #expect(engine.level > 0.1)
+    await engine.stop()
+}
+
+/// Régression (crash du 25/08) : CoreAudio livre les buffers sur son thread IO, jamais
+/// sur le MainActor. Avant le typage @Sendable des callbacks, la closure d'analyse
+/// héritait de l'isolation MainActor de l'engine et le runtime trap-ait au premier
+/// buffer réel (EXC_BREAKPOINT dans dispatch_assert_queue).
+@Test @MainActor func samplesDeliveredFromAudioThreadDoNotTrap() async throws {
+    let (engine, _, _) = makeEngine()
+    let source = FakeSource()
+    await engine.start(source: source)
+    let loud = (0..<4096).map { i in Float(0.8 * sin(2.0 * .pi * 60 * Double(i) / 48_000)) }
+    let callback = source.callback
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global().async {
+            callback?(loud, 48_000)
+            continuation.resume()
+        }
+    }
     try await Task.sleep(for: .milliseconds(80))
     #expect(engine.level > 0.1)
     await engine.stop()

@@ -10,8 +10,8 @@ public final class SystemAudioTap: AudioSource {
 
     // Lu depuis la queue CoreAudio, muté depuis le MainActor : accès sous lock.
     private let callbackLock = NSLock()
-    private var failureHandler: ((String) -> Void)?
-    public var onFailure: ((String) -> Void)? {
+    private var failureHandler: (@Sendable (String) -> Void)?
+    public var onFailure: (@Sendable (String) -> Void)? {
         get { callbackLock.withLock { failureHandler } }
         set { callbackLock.withLock { failureHandler = newValue } }
     }
@@ -29,7 +29,7 @@ public final class SystemAudioTap: AudioSource {
 
     public init() {}
 
-    public func start(onSamples: @escaping ([Float], Double) -> Void) throws {
+    public func start(onSamples: @escaping @Sendable ([Float], Double) -> Void) throws {
         // Tap global : « tout sauf ces processus » avec liste vide = tout l'audio système.
         // Ne PAS toucher isExclusive après coup (le flipper transforme la liste vide en
         // « seulement ces processus » = silence éternel).

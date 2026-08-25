@@ -4,8 +4,11 @@ import Foundation
 /// `onSamples(monoSamples, sampleRate)` — samples mono mixés, sampleRate courant du device.
 public protocol AudioSource: AnyObject {
     var displayName: String { get }
-    var onFailure: ((String) -> Void)? { get set }
-    func start(onSamples: @escaping ([Float], Double) -> Void) throws
+    // @Sendable est structurel : ces callbacks sont invoqués depuis les threads audio
+    // (HAL IO, tap AVAudioEngine). Sans lui, une closure créée dans un contexte @MainActor
+    // hérite de cette isolation et le runtime Swift 6 trap au premier buffer réel.
+    var onFailure: (@Sendable (String) -> Void)? { get set }
+    func start(onSamples: @escaping @Sendable ([Float], Double) -> Void) throws
     func stop()
 }
 

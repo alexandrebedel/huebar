@@ -13,16 +13,16 @@ public final class DeviceInputSource: AudioSource {
     // Ces closures sont lues sur le thread du tap audio et mutées depuis le MainActor :
     // l'accès passe par un lock pour éviter un load/release non synchronisé (use-after-free).
     private let callbackLock = NSLock()
-    private var failureHandler: ((String) -> Void)?
-    private var rawBufferHandler: ((AVAudioPCMBuffer) -> Void)?
+    private var failureHandler: (@Sendable (String) -> Void)?
+    private var rawBufferHandler: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
-    public var onFailure: ((String) -> Void)? {
+    public var onFailure: (@Sendable (String) -> Void)? {
         get { callbackLock.withLock { failureHandler } }
         set { callbackLock.withLock { failureHandler = newValue } }
     }
 
     /// Buffers bruts du tap (tous canaux, format hardware) — consommés par le Recorder.
-    public var onRawBuffer: ((AVAudioPCMBuffer) -> Void)? {
+    public var onRawBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)? {
         get { callbackLock.withLock { rawBufferHandler } }
         set { callbackLock.withLock { rawBufferHandler = newValue } }
     }
@@ -35,7 +35,7 @@ public final class DeviceInputSource: AudioSource {
         self.channelPair = channelPair
     }
 
-    public func start(onSamples: @escaping ([Float], Double) -> Void) throws {
+    public func start(onSamples: @escaping @Sendable ([Float], Double) -> Void) throws {
         guard let audioUnit = engine.inputNode.audioUnit else {
             throw AudioSourceError.engineStartFailed("input node sans audio unit")
         }

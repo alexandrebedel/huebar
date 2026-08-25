@@ -43,6 +43,8 @@ struct LightRowView: View {
                     }
                 }
                 .controlSize(.mini)
+                .disabled(!light.on.on)
+                .opacity(light.on.on ? 1 : 0.35)
             }
         }
         .padding(.leading, 4)

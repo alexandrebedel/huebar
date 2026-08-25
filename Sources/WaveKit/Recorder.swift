@@ -5,7 +5,9 @@ import Foundation
 /// (AVAudioFile ne resample jamais : le fichier suit la source).
 /// Écriture hors du thread audio : copie stéréo du buffer puis queue série.
 /// `close()` finalise le header RIFF — sans lui, un crash laisse un header à zéro.
-public final class Recorder {
+/// @unchecked : l'état partagé est déjà protégé (stateLock + writerQueue, cf. ci-dessous),
+/// et `append` est conçu pour le thread audio pendant que start/stop restent au MainActor.
+public final class Recorder: @unchecked Sendable {
     private let directory: URL
     private let writerQueue = DispatchQueue(label: "huebar.recorder.writer")
     private var file: AVAudioFile?

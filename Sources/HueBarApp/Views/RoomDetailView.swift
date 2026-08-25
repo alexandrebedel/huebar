@@ -46,7 +46,8 @@ struct RoomDetailView: View {
                     Task { await state.setRoomBrightness(id: room.id, brightness) }
                 }
             }
-            .disabled(room.groupedLightID == nil)
+            .disabled(room.groupedLightID == nil || !room.isOn)
+            .opacity(room.isOn ? 1 : 0.35)
         }
     }
 }
