@@ -93,6 +93,16 @@ public enum SceneGallery {
         .init(name: "Stimulation", kind: .white(mirek: 156), brightness: 100),
     ]
 
+    /// Palette bridge du scénario — rend la scène créée jouable en dynamique ;
+    /// nil pour les recettes de blanc.
+    public static func palette(for scenario: GalleryScenario) -> ScenePalette? {
+        guard case .palette(let colors) = scenario.kind, colors.count >= 2 else { return nil }
+        return ScenePalette(color: colors.prefix(9).map {
+            .init(color: ColorState(xy: HueColor.xy(red: $0.red, green: $0.green, blue: $0.blue)),
+                  dimming: Dimming(brightness: scenario.brightness))
+        })
+    }
+
     /// Actions par lampe pour un scénario : palette distribuée en boucle sur les lampes
     /// couleur (blanc chaud pour les autres), ou température clampée au schéma de chaque
     /// lampe pour une recette de blanc.

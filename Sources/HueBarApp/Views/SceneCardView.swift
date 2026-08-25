@@ -48,12 +48,13 @@ struct SceneCardView: View {
                 lineWidth: scene.isActive ? 2 : 1))
             .overlay(alignment: .topLeading) {
                 if scene.isActive {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: scene.isDynamicActive
+                          ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.white)
                         .shadow(radius: 2)
                         .padding(6)
-                        .help("Scène active")
+                        .help(scene.isDynamicActive ? "Scène dynamique en cours" : "Scène active")
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -75,6 +76,25 @@ struct SceneCardView: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .contextMenu {
+            if scene.supportsDynamic {
+                Button("Lancer en dynamique") {
+                    Task { await state.recallSceneDynamic(id: scene.id) }
+                }
+                Menu("Vitesse") {
+                    ForEach(Self.speeds, id: \.value) { speed in
+                        Button {
+                            Task { await state.setSceneSpeed(id: scene.id, speed: speed.value) }
+                        } label: {
+                            if abs((scene.speed ?? 0.5) - speed.value) < 0.125 {
+                                Label(speed.label, systemImage: "checkmark")
+                            } else {
+                                Text(speed.label)
+                            }
+                        }
+                    }
+                }
+                Divider()
+            }
             Button("Renommer la scène…") {
                 newName = scene.metadata.name
                 renaming = true
@@ -87,6 +107,10 @@ struct SceneCardView: View {
             Task { await state.renameScene(id: scene.id, name: name) }
         }
     }
+
+    private static let speeds: [(label: String, value: Double)] = [
+        ("Lent", 0.25), ("Moyen", 0.5), ("Rapide", 0.8),
+    ]
 
     private var gradientColors: [Color] {
         let stops = SceneGradient.stops(for: scene)

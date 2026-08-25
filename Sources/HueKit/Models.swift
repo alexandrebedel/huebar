@@ -161,16 +161,67 @@ public struct SceneStatus: Codable, Sendable, Equatable {
     public init(active: String?) { self.active = active }
 }
 
+/// Palette d'une scène — c'est elle que le mode dynamique fait circuler entre
+/// les lampes. Le POST exige les trois tableaux (vides acceptés).
+public struct ScenePalette: Codable, Sendable, Equatable {
+    public struct ColorEntry: Codable, Sendable, Equatable {
+        public var color: ColorState
+        public var dimming: Dimming?
+
+        public init(color: ColorState, dimming: Dimming? = nil) {
+            self.color = color
+            self.dimming = dimming
+        }
+    }
+
+    public struct TemperatureEntry: Codable, Sendable, Equatable {
+        public var colorTemperature: ColorTemperatureState
+        public var dimming: Dimming?
+
+        public init(colorTemperature: ColorTemperatureState, dimming: Dimming? = nil) {
+            self.colorTemperature = colorTemperature
+            self.dimming = dimming
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case colorTemperature = "color_temperature"
+            case dimming
+        }
+    }
+
+    public var color: [ColorEntry]?
+    public var dimming: [Dimming]?
+    public var colorTemperature: [TemperatureEntry]?
+
+    public init(color: [ColorEntry]?, dimming: [Dimming]? = [], colorTemperature: [TemperatureEntry]? = []) {
+        self.color = color
+        self.dimming = dimming
+        self.colorTemperature = colorTemperature
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case color, dimming
+        case colorTemperature = "color_temperature"
+    }
+}
+
 public struct HueScene: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var metadata: Metadata
     public var group: ResourceRef
     public var actions: [SceneAction]?
     public var status: SceneStatus?
+    public var speed: Double?
+    public var palette: ScenePalette?
 
     public var isActive: Bool {
         if let active = status?.active { active != "inactive" } else { false }
     }
+
+    public var isDynamicActive: Bool { status?.active == "dynamic_palette" }
+
+    /// Jouable en dynamique : il faut au moins deux couleurs à faire circuler.
+    public var supportsDynamic: Bool { (palette?.color?.count ?? 0) >= 2 }
 }
 
 public struct GroupedLight: Codable, Identifiable, Sendable, Equatable {

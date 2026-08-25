@@ -19,7 +19,9 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     private(set) var lightUpdates: [(id: String, update: LightUpdate)] = []
     private(set) var groupedUpdates: [(id: String, update: LightUpdate)] = []
     private(set) var recalledScenes: [String] = []
-    private(set) var createdScenes: [(name: String, groupID: String, actions: [SceneAction])] = []
+    private(set) var dynamicRecalls: [String] = []
+    private(set) var sceneSpeeds: [(id: String, speed: Double)] = []
+    private(set) var createdScenes: [(name: String, groupID: String, actions: [SceneAction], palette: ScenePalette?)] = []
     private(set) var deletedScenes: [String] = []
     private(set) var renames: [(resource: String, id: String, name: String)] = []
 
@@ -33,9 +35,19 @@ final class FakeClient: HueControlling, @unchecked Sendable {
         if mustFail { throw HueError.invalidResponse }
     }
 
-    func createScene(name: String, groupID: String, actions: [SceneAction]) async throws {
+    func createScene(name: String, groupID: String, actions: [SceneAction], palette: ScenePalette?) async throws {
         try failIfNeeded()
-        createdScenes.append((name: name, groupID: groupID, actions: actions))
+        createdScenes.append((name: name, groupID: groupID, actions: actions, palette: palette))
+    }
+
+    func recallDynamicScene(id: String) async throws {
+        try failIfNeeded()
+        dynamicRecalls.append(id)
+    }
+
+    func setSceneSpeed(id: String, speed: Double) async throws {
+        try failIfNeeded()
+        sceneSpeeds.append((id, speed))
     }
 
     func deleteScene(id: String) async throws {

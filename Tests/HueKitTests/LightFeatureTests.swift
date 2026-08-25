@@ -156,6 +156,64 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     #expect(fake.createdScenes[0].actions.count == 3)
 }
 
+@Test func sceneDecodesPaletteAndSpeed() throws {
+    let json = """
+    {"id":"S1","metadata":{"name":"Tokyo"},"group":{"rid":"R1","rtype":"room"},"speed":0.6,
+     "palette":{"color":[{"color":{"xy":{"x":0.2,"y":0.3}},"dimming":{"brightness":80}},
+                         {"color":{"xy":{"x":0.5,"y":0.4}}}],
+                "dimming":[],"color_temperature":[]},
+     "status":{"active":"dynamic_palette"}}
+    """
+    let scene = try JSONDecoder().decode(HueScene.self, from: Data(json.utf8))
+    #expect(scene.speed == 0.6)
+    #expect(scene.supportsDynamic)
+    #expect(scene.isDynamicActive)
+    #expect(scene.isActive)
+
+    let plain = HueScene(id: "S2", metadata: Metadata(name: "X"), group: ResourceRef(rid: "R1", rtype: "room"))
+    #expect(!plain.supportsDynamic)
+    #expect(!plain.isDynamicActive)
+}
+
+@MainActor
+@Test func recallSceneDynamicAndSpeedReachTheBridge() async {
+    let (state, fake) = await makeGalleryState()
+    await state.recallSceneDynamic(id: "SC1")
+    #expect(fake.dynamicRecalls == ["SC1"])
+
+    await state.setSceneSpeed(id: "SC1", speed: 0.8)
+    #expect(fake.sceneSpeeds.map(\.id) == ["SC1"])
+    #expect(fake.sceneSpeeds.map(\.speed) == [0.8])
+    #expect(state.rooms[0].scenes[0].speed == 0.8) // pas de refresh : la valeur locale reste
+}
+
+@MainActor
+@Test func saveScenarioIncludesPaletteOnlyForColorScenarios() async throws {
+    let (state, fake) = await makeGalleryState()
+    let tokyo = try #require(SceneGallery.scenarios.first { $0.name == "Tokyo" })
+    await state.saveScenario(roomID: "R1", tokyo)
+    #expect(fake.createdScenes[0].palette?.color?.count == 4)
+
+    let white = try #require(SceneGallery.scenarios.first { $0.name == "Lecture" })
+    await state.saveScenario(roomID: "R1", white)
+    #expect(fake.createdScenes[1].palette == nil)
+}
+
+@Test func capturePaletteNeedsTwoColors() {
+    var first = colorLight()
+    first.on = OnState(on: true)
+    first.colorTemperature?.mirek = nil
+    var second = colorLight(id: "L2", device: "D2")
+    second.on = OnState(on: true)
+    second.colorTemperature?.mirek = nil
+
+    let single = SceneCapture.actions(from: [first, whiteLight()])
+    #expect(SceneCapture.palette(from: single) == nil)
+
+    let pair = SceneCapture.actions(from: [first, second])
+    #expect(SceneCapture.palette(from: pair)?.color?.count == 2)
+}
+
 @Test func captureReflectsCurrentLightModes() throws {
     var colorMode = colorLight()
     colorMode.on = OnState(on: true)

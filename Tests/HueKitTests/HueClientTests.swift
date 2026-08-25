@@ -54,6 +54,44 @@ struct HueClientTests {
         try await makeClient().recallScene(id: "S1")
     }
 
+    @Test func recallDynamicAndSpeedPutTheirBodies() async throws {
+        MockURLProtocol.handler = { request in
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8)
+            #expect(body == #"{"recall":{"action":"dynamic_palette"}}"#)
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().recallDynamicScene(id: "S1")
+
+        MockURLProtocol.handler = { request in
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8)
+            #expect(body == #"{"speed":0.25}"#)
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().setSceneSpeed(id: "S1", speed: 0.25)
+    }
+
+    @Test func createSceneEncodesPaletteWithEmptyRequiredArrays() async throws {
+        MockURLProtocol.handler = { request in
+            #expect(request.httpMethod == "POST")
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8) ?? ""
+            #expect(body.contains(#""palette":{"color":[{"color":{"xy":"#))
+            #expect(body.contains(#""color_temperature":[]"#))
+            #expect(body.contains(#""dimming":[]"#))
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        let palette = ScenePalette(color: [.init(color: ColorState(xy: XY(x: 0.4, y: 0.4)))])
+        try await makeClient().createScene(name: "X", groupID: "R1", actions: [], palette: palette)
+    }
+
+    @Test func createSceneOmitsAbsentPalette() async throws {
+        MockURLProtocol.handler = { request in
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8) ?? ""
+            #expect(!body.contains("palette"))
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().createScene(name: "X", groupID: "R1", actions: [], palette: nil)
+    }
+
     @Test func renameLightPutsMetadataName() async throws {
         MockURLProtocol.handler = { request in
             #expect(request.url?.absoluteString == "https://192.168.1.134/clip/v2/resource/light/L1")

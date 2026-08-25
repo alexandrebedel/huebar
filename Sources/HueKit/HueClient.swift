@@ -50,9 +50,26 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
     }
 
     public func recallScene(id: String) async throws {
-        struct Recall: Encodable { let action = "active" }
-        struct Body: Encodable { let recall = Recall() }
-        _ = try await send("PUT", "/clip/v2/resource/scene/\(id)", body: try encode(Body()))
+        try await recall(id: id, action: "active")
+    }
+
+    /// Lance la scène en mode dynamique : sa palette circule entre les lampes.
+    public func recallDynamicScene(id: String) async throws {
+        try await recall(id: id, action: "dynamic_palette")
+    }
+
+    private func recall(id: String, action: String) async throws {
+        struct Recall: Encodable { let action: String }
+        struct Body: Encodable { let recall: Recall }
+        _ = try await send("PUT", "/clip/v2/resource/scene/\(id)",
+                           body: try encode(Body(recall: Recall(action: action))))
+    }
+
+    /// Vitesse du mode dynamique (0 lent ... 1 rapide), mémorisée par le bridge.
+    public func setSceneSpeed(id: String, speed: Double) async throws {
+        struct Body: Encodable { let speed: Double }
+        _ = try await send("PUT", "/clip/v2/resource/scene/\(id)",
+                           body: try encode(Body(speed: speed)))
     }
 
     public func deleteScene(id: String) async throws {
@@ -78,17 +95,21 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
                            body: try encode(Body(metadata: MetadataBody(name: name))))
     }
 
-    public func createScene(name: String, groupID: String, actions: [SceneAction]) async throws {
+    public func createScene(
+        name: String, groupID: String, actions: [SceneAction], palette: ScenePalette?
+    ) async throws {
         struct Body: Encodable {
             let type = "scene"
             let metadata: Metadata
             let group: ResourceRef
             let actions: [SceneAction]
+            let palette: ScenePalette?
         }
         _ = try await send("POST", "/clip/v2/resource/scene", body: try encode(Body(
             metadata: Metadata(name: name),
             group: ResourceRef(rid: groupID, rtype: "room"),
-            actions: actions
+            actions: actions,
+            palette: palette
         )))
     }
 

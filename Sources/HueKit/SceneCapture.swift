@@ -22,4 +22,15 @@ public enum SceneCapture {
             return SceneAction(action: body, target: ResourceRef(rid: light.id, rtype: "light"))
         }
     }
+
+    /// Palette tirée des couleurs capturées (lampes allumées en mode couleur) —
+    /// rend la scène capturée jouable en dynamique dès qu'il y a deux couleurs.
+    public static func palette(from actions: [SceneAction]) -> ScenePalette? {
+        let entries = actions.compactMap { action -> ScenePalette.ColorEntry? in
+            guard action.action.on?.on == true, let color = action.action.color else { return nil }
+            return .init(color: color, dimming: action.action.dimming)
+        }
+        guard entries.count >= 2 else { return nil }
+        return ScenePalette(color: Array(entries.prefix(9)))
+    }
 }

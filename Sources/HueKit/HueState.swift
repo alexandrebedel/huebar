@@ -162,18 +162,43 @@ public final class HueState {
         await refresh() // une scène change lampes et couleurs : on resynchronise tout
     }
 
+    /// Lance la scène en mode dynamique (sa palette circule entre les lampes).
+    public func recallSceneDynamic(id: String) async {
+        markSceneActive(id: id, as: "dynamic_palette")
+        await perform { client in
+            try await client.recallDynamicScene(id: id)
+        }
+        await refresh()
+    }
+
+    /// Vitesse du mode dynamique (0 lent ... 1 rapide), mémorisée par scène.
+    public func setSceneSpeed(id: String, speed: Double) async {
+        for roomIndex in rooms.indices {
+            if let sceneIndex = rooms[roomIndex].scenes.firstIndex(where: { $0.id == id }) {
+                rooms[roomIndex].scenes[sceneIndex].speed = speed
+            }
+        }
+        if var zone = all, let sceneIndex = zone.scenes.firstIndex(where: { $0.id == id }) {
+            zone.scenes[sceneIndex].speed = speed
+            all = zone
+        }
+        await perform { client in
+            try await client.setSceneSpeed(id: id, speed: speed)
+        }
+    }
+
     /// La scène rappelée devient active, les autres scènes du même groupe inactives.
-    private func markSceneActive(id: String) {
+    private func markSceneActive(id: String, as active: String = "static") {
         for roomIndex in rooms.indices where rooms[roomIndex].scenes.contains(where: { $0.id == id }) {
             for sceneIndex in rooms[roomIndex].scenes.indices {
                 rooms[roomIndex].scenes[sceneIndex].status = SceneStatus(
-                    active: rooms[roomIndex].scenes[sceneIndex].id == id ? "static" : "inactive")
+                    active: rooms[roomIndex].scenes[sceneIndex].id == id ? active : "inactive")
             }
         }
         if var zone = all, zone.scenes.contains(where: { $0.id == id }) {
             for index in zone.scenes.indices {
                 zone.scenes[index].status = SceneStatus(
-                    active: zone.scenes[index].id == id ? "static" : "inactive")
+                    active: zone.scenes[index].id == id ? active : "inactive")
             }
             all = zone
         }
@@ -286,7 +311,9 @@ public final class HueState {
         let actions = SceneCapture.actions(from: room.lights)
         guard !actions.isEmpty else { return }
         await perform { client in
-            try await client.createScene(name: name, groupID: roomID, actions: actions)
+            try await client.createScene(
+                name: name, groupID: roomID, actions: actions,
+                palette: SceneCapture.palette(from: actions))
         }
         await refresh() // la nouvelle scène doit apparaître dans la grille
     }
@@ -297,7 +324,9 @@ public final class HueState {
         let actions = SceneGallery.actions(for: scenario, lights: room.lights)
         guard !actions.isEmpty else { return }
         await perform { client in
-            try await client.createScene(name: scenario.name, groupID: roomID, actions: actions)
+            try await client.createScene(
+                name: scenario.name, groupID: roomID, actions: actions,
+                palette: SceneGallery.palette(for: scenario))
         }
         await refresh() // la nouvelle scène doit apparaître dans la grille
     }
