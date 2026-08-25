@@ -3,7 +3,8 @@ import Foundation
 
 /// Analyse temps réel : fenêtres de 1024 échantillons (Hann + FFT),
 /// énergie par bandes (basses < 150 Hz, mids 150–2000 Hz, aigus > 2000 Hz),
-/// détection de beat par flux d'énergie des basses contre une moyenne glissante.
+/// détection de beat par flux spectral des basses (hausses d'amplitude bin par bin)
+/// contre un seuil adaptatif — capte le transitoire du kick, pas le niveau.
 /// Non thread-safe : à utiliser depuis la queue audio uniquement.
 public final class AudioAnalyzer {
     private static let windowSize = 1024
@@ -14,7 +15,8 @@ public final class AudioAnalyzer {
     private var window = [Float](repeating: 0, count: windowSize)
     private var pending: [Float] = []
 
-    private var bassHistory: [Double] = []
+    private var previousLowSpectrum: [Double] = []
+    private var fluxHistory: [Double] = []
     private var framesSinceBeat = Int.max
 
     public init(sampleRate: Double) {
@@ -84,16 +86,37 @@ public final class AudioAnalyzer {
         let mid = bandLevel(150, 2_000, gain: 12)
         let high = bandLevel(2_000, 16_000, gain: 20)
 
-        // Beat : flux des basses vs moyenne glissante (~1 s), avec réfractaire de 7 frames (~150 ms).
-        let average = bassHistory.isEmpty ? 0 : bassHistory.reduce(0, +) / Double(bassHistory.count)
+        // Flux spectral des basses : somme des HAUSSES d'amplitude bin par bin — une
+        // basse tenue est stable (flux ≈ 0), seul le transitoire du kick ressort.
+        let lowFirst = max(1, Int(20 / binWidth))
+        let lowLast = min(half - 1, Int(250 / binWidth))
+        var flux = 0.0
+        var lowSpectrum: [Double] = []
+        lowSpectrum.reserveCapacity(lowLast - lowFirst + 1)
+        for bin in lowFirst...lowLast {
+            let amplitude = sqrt(Double(magnitudes[bin])) / 1024
+            if lowSpectrum.count < previousLowSpectrum.count {
+                flux += max(0, amplitude - previousLowSpectrum[lowSpectrum.count])
+            }
+            lowSpectrum.append(amplitude)
+        }
+        previousLowSpectrum = lowSpectrum
+
+        // Seuil adaptatif sur ~1 s de flux (moyenne + écarts-types absorbent le wobble
+        // de leakage d'une nappe continue), plancher anti-bruit, réfractaire ~150 ms.
         framesSinceBeat = framesSinceBeat == Int.max ? Int.max : framesSinceBeat + 1
+        let mean = fluxHistory.isEmpty ? 0 : fluxHistory.reduce(0, +) / Double(fluxHistory.count)
+        let variance = fluxHistory.isEmpty
+            ? 0
+            : fluxHistory.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(fluxHistory.count)
+        let threshold = max(0.008, mean * 1.5 + 2.5 * variance.squareRoot())
         var beat = false
-        if bass > 0.05, bass > average * 1.5, framesSinceBeat > 7 || framesSinceBeat == Int.max {
+        if flux > threshold, framesSinceBeat > 7 || framesSinceBeat == Int.max {
             beat = true
             framesSinceBeat = 0
         }
-        bassHistory.append(bass)
-        if bassHistory.count > 46 { bassHistory.removeFirst() }
+        fluxHistory.append(flux)
+        if fluxHistory.count > 46 { fluxHistory.removeFirst() }
 
         return AnalysisFrame(rms: Double(rms), bass: bass, mid: mid, high: high, beat: beat)
     }

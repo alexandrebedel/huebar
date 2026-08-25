@@ -62,3 +62,16 @@ private func analyzeAll(_ samples: [Float]) -> [AnalysisFrame] {
     let beats = analyzeAll(sine(frequency: 60, amplitude: 0.8, frames: 96_000)).filter(\.beat).count
     #expect(beats <= 2) // l'attaque initiale au plus — pas de beats sur un niveau constant
 }
+
+@Test func kicksOverSustainedBassAreStillDetected() {
+    // Nappe de basse continue + kicks par-dessus : un détecteur par niveau ratait les
+    // kicks (la moyenne montait avec la nappe), le flux spectral capte les transitoires.
+    var samples = sine(frequency: 55, amplitude: 0.25, frames: 144_000)
+    for beatIndex in 0..<6 {
+        let start = beatIndex * 24_000
+        let kick = sine(frequency: 90, amplitude: 0.9, frames: 4_800, startFrame: start)
+        for (offset, value) in kick.enumerated() { samples[start + offset] += value }
+    }
+    let beats = analyzeAll(samples).filter(\.beat).count
+    #expect(beats >= 3 && beats <= 12)
+}
