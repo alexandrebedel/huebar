@@ -20,6 +20,17 @@
     <string>15.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.alexbedel.huebar</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>huebar</string>
+            </array>
+        </dict>
+    </array>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
