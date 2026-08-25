@@ -181,6 +181,21 @@ private func makeEngine(clientKey: String? = "05C37B87131DA78EA028CE0429AE3F94")
 }
 
 @MainActor
+@Test func loopExposesFrameAndMappedColorsForTheVisualizer() async throws {
+    let (engine, _, _) = makeEngine()
+    let source = FakeSource()
+    await engine.start(source: source)
+    let loud = (0..<4096).map { i in Float(0.8 * sin(2.0 * .pi * 60 * Double(i) / 48_000)) }
+    source.callback?(loud, 48_000)
+    try await Task.sleep(for: .milliseconds(80))
+    #expect(engine.frame.bass > 0.1)
+    #expect(engine.lastColors.count == 2) // un par channel de la zone
+    await engine.stop()
+    #expect(engine.frame == .silence)
+    #expect(engine.lastColors.isEmpty)
+}
+
+@MainActor
 @Test func audioSamplesDriveTheLevel() async throws {
     let (engine, _, _) = makeEngine()
     let source = FakeSource()

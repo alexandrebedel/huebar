@@ -21,6 +21,9 @@ public final class MusicSyncEngine {
     public private(set) var state: State = .idle
     public private(set) var level: Double = 0
     public private(set) var zoneName: String?
+    /// Dernière frame d'analyse et couleurs réellement envoyées (visualiseur).
+    public private(set) var frame: AnalysisFrame = .silence
+    public private(set) var lastColors: [ChannelColor] = []
     /// Appelé à chaque teardown (stop manuel, erreur, déconnexion) — y compris quand
     /// aucune vue n'est à l'écran. Les consommateurs de la source (Recorder) s'y accrochent.
     public var onDidTeardown: (() -> Void)?
@@ -143,11 +146,13 @@ public final class MusicSyncEngine {
                 guard let self else { return }
                 let frame = self.latestFrame.withLock { $0 }
                 self.level = min(1, frame.rms * 3)
+                self.frame = frame
                 let mapped = self.mapper.map(frame: frame, channels: self.channels,
                                              time: ProcessInfo.processInfo.systemUptime)
                 let colors = self.heldChannels.isEmpty
                     ? mapped
                     : mapped.map { self.heldChannels[$0.channel] ?? $0 }
+                self.lastColors = colors
                 if let configID = self.configID {
                     self.transport.send(HueStreamEncoder.frame(
                         configID: configID, sequence: sequence, channels: colors))
@@ -175,6 +180,8 @@ public final class MusicSyncEngine {
         channels = []
         zoneName = nil
         level = 0
+        frame = .silence
+        lastColors = []
         latestFrame.withLock { $0 = .silence }
         onDidTeardown?()
     }

@@ -173,6 +173,7 @@ struct MusicSectionView: View {
             }
 
             if isRunning {
+                SyncVisualizer(engine: engine)
                 ProgressView(value: engine.level)
                     .tint(engine.level > 0.02 ? .green : .orange)
                 if engine.level < 0.02 {
@@ -443,6 +444,55 @@ struct MusicSectionView: View {
     private static func durationLabel(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
+    }
+}
+
+/// Visualiseur : bandes spectrales, pulse de beat et couleurs réellement envoyées
+/// par channel — pour juger le tuning d'un coup d'œil, sans regarder les lampes.
+private struct SyncVisualizer: View {
+    let engine: MusicSyncEngine
+
+    var body: some View {
+        HStack(spacing: 14) {
+            HStack(alignment: .bottom, spacing: 5) {
+                band("Bass", engine.frame.bass, Color(red: 0.95, green: 0.30, blue: 0.35))
+                band("Mid", engine.frame.mid, Color(red: 0.95, green: 0.60, blue: 0.25))
+                band("High", engine.frame.high, Color(red: 0.95, green: 0.85, blue: 0.30))
+            }
+
+            Circle()
+                .fill(.pink)
+                .frame(width: 12, height: 12)
+                .scaleEffect(engine.frame.beat ? 1.5 : 0.7)
+                .opacity(engine.frame.beat ? 1 : 0.35)
+                .animation(.easeOut(duration: 0.15), value: engine.frame.beat)
+                .help("Beat détecté")
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                ForEach(engine.lastColors, id: \.channel) { channel in
+                    Circle()
+                        .fill(Color(red: channel.red, green: channel.green, blue: channel.blue))
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.15)))
+                }
+            }
+            .help("Couleurs envoyées, un point par channel de la zone")
+        }
+        .frame(height: 48)
+    }
+
+    private func band(_ label: String, _ value: Double, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Spacer(minLength: 0)
+            Capsule()
+                .fill(color.opacity(0.9))
+                .frame(width: 9, height: max(3, min(1, value) * 34))
+            Text(label)
+                .font(.system(size: 7))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
