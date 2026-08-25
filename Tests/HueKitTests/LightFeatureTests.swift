@@ -156,6 +156,47 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     #expect(fake.createdScenes[0].actions.count == 3)
 }
 
+@Test func lightDecodesGradientAndUpdateEncodesPointsOnly() throws {
+    let json = """
+    {"id":"L9","metadata":{"name":"Strip"},"on":{"on":true},"owner":{"rid":"D9","rtype":"device"},
+     "gradient":{"points":[{"color":{"xy":{"x":0.2,"y":0.3}}},{"color":{"xy":{"x":0.5,"y":0.4}}}],
+                 "points_capable":5}}
+    """
+    let light = try JSONDecoder().decode(Light.self, from: Data(json.utf8))
+    #expect(light.gradient?.points.count == 2)
+    #expect(light.gradient?.pointsCapable == 5)
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let update = LightUpdate(gradient: light.gradient)
+    let body = String(data: try encoder.encode(update), encoding: .utf8)!
+    // points_capable ne repart jamais en PUT
+    #expect(body == #"{"gradient":{"points":[{"color":{"xy":{"x":0.2,"y":0.3}}},{"color":{"xy":{"x":0.5,"y":0.4}}}]}}"#)
+}
+
+@MainActor
+@Test func setLightGradientIsOptimisticAndSendsPoints() async {
+    let fake = FakeClient()
+    var strip = colorLight()
+    strip.gradient = GradientState(points: [], pointsCapable: 5)
+    fake.lights = [strip]
+    fake.rooms = [Room(
+        id: "R1", metadata: Metadata(name: "Séjour"),
+        children: [ref("D1", "device")], services: [ref("G1", "grouped_light")])]
+    fake.grouped = [GroupedLight(id: "G1", owner: ref("R1", "room"), on: OnState(on: false), dimming: nil)]
+    let state = HueState(client: fake)
+    await state.refresh()
+
+    await state.setLightGradient(roomID: "R1", lightID: "L1", colors: [(1, 0, 0), (0, 0, 1)])
+    #expect(state.rooms[0].lights[0].gradient?.points.count == 2)
+    #expect(state.rooms[0].lights[0].on.on)
+    #expect(fake.lightUpdates.last?.update.gradient?.points.count == 2)
+
+    // Une lampe sans gradient ignore l'appel.
+    await state.setLightGradient(roomID: "R1", lightID: "absente", colors: [(1, 0, 0)])
+    #expect(fake.lightUpdates.count == 1)
+}
+
 @Test func sceneDecodesPaletteAndSpeed() throws {
     let json = """
     {"id":"S1","metadata":{"name":"Tokyo"},"group":{"rid":"R1","rtype":"room"},"speed":0.6,

@@ -57,9 +57,10 @@ public struct Light: Codable, Identifiable, Sendable, Equatable {
     public var owner: ResourceRef
     public var colorTemperature: ColorTemperatureState?
     public var effects: LightEffects?
+    public var gradient: GradientState?
 
     private enum CodingKeys: String, CodingKey {
-        case id, metadata, on, dimming, color, owner, effects
+        case id, metadata, on, dimming, color, owner, effects, gradient
         case colorTemperature = "color_temperature"
     }
 }
@@ -118,6 +119,29 @@ public struct LightEffects: Codable, Sendable, Equatable {
         case effect
         case effectValues = "effect_values"
         case status
+    }
+}
+
+/// Bandeau gradient (Lightstrip, Play gradient…) : points de couleur répartis sur
+/// la longueur. En GET `points` = état courant et `points_capable` = maximum ;
+/// en PUT seuls les points sont envoyés.
+public struct GradientState: Codable, Sendable, Equatable {
+    public struct Point: Codable, Sendable, Equatable {
+        public var color: ColorState
+        public init(color: ColorState) { self.color = color }
+    }
+
+    public var points: [Point]
+    public var pointsCapable: Int?
+
+    public init(points: [Point], pointsCapable: Int? = nil) {
+        self.points = points
+        self.pointsCapable = pointsCapable
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case points
+        case pointsCapable = "points_capable"
     }
 }
 
@@ -238,16 +262,19 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
     public var color: ColorState?
     public var colorTemperature: ColorTemperatureState?
     public var effects: LightEffects?
+    public var gradient: GradientState?
 
     public init(
         on: OnState? = nil, dimming: Dimming? = nil, color: ColorState? = nil,
-        colorTemperature: ColorTemperatureState? = nil, effects: LightEffects? = nil
+        colorTemperature: ColorTemperatureState? = nil, effects: LightEffects? = nil,
+        gradient: GradientState? = nil
     ) {
         self.on = on
         self.dimming = dimming
         self.color = color
         self.colorTemperature = colorTemperature
         self.effects = effects
+        self.gradient = gradient
     }
 
     /// L'état qu'applique une action de scène, converti en PUT direct sur la lampe.
@@ -265,10 +292,14 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
         try container.encodeIfPresent(color, forKey: .color)
         try container.encodeIfPresent(colorTemperature, forKey: .colorTemperature)
         try container.encodeIfPresent(effects, forKey: .effects)
+        if let gradient {
+            // En PUT le bridge refuse points_capable : seuls les points partent.
+            try container.encode(GradientState(points: gradient.points), forKey: .gradient)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case on, dimming, color, effects
+        case on, dimming, color, effects, gradient
         case colorTemperature = "color_temperature"
     }
 }

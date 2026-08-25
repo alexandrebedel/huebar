@@ -249,6 +249,25 @@ public final class HueState {
         }
     }
 
+    /// Points de couleur d'un bandeau gradient (répartis sur sa longueur).
+    public func setLightGradient(
+        roomID: String, lightID: String, colors: [(red: Double, green: Double, blue: Double)]
+    ) async {
+        guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID),
+              rooms[roomIndex].lights[lightIndex].gradient != nil, !colors.isEmpty else { return }
+        let points = colors.map {
+            GradientState.Point(color: ColorState(xy: HueColor.xy(red: $0.red, green: $0.green, blue: $0.blue)))
+        }
+        rooms[roomIndex].lights[lightIndex].gradient?.points = points
+        rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
+        await perform { client in
+            try await client.updateLight(
+                id: lightID,
+                LightUpdate(on: OnState(on: true), gradient: GradientState(points: points))
+            )
+        }
+    }
+
     public func setLightEffect(roomID: String, lightID: String, effect: String) async {
         guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
         rooms[roomIndex].lights[lightIndex].effects?.status = effect

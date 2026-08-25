@@ -12,6 +12,8 @@ struct LightCardView: View {
     @State private var colorTask: Task<Void, Never>?
     @State private var renaming = false
     @State private var newName = ""
+    @State private var gradientColors: [Color] = []
+    @State private var gradientTask: Task<Void, Never>?
 
     var body: some View {
         let tint = HueCardStyle.tint(for: light)
@@ -74,6 +76,23 @@ struct LightCardView: View {
                 .disabled(!tint.isOn)
                 .opacity(tint.isOn ? 1 : 0.35)
             }
+            if light.gradient != nil, !gradientColors.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "rainbow")
+                        .font(.caption)
+                        .foregroundStyle(tint.foreground.opacity(0.7))
+                    ForEach(gradientColors.indices, id: \.self) { index in
+                        ColorPicker("", selection: $gradientColors[index], supportsOpacity: false)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    Spacer()
+                }
+                .onChange(of: gradientColors) { _, _ in scheduleGradientSend() }
+                .disabled(!tint.isOn)
+                .opacity(tint.isOn ? 1 : 0.4)
+                .help("Dégradé : un point de couleur par pipette, réparti sur le bandeau")
+            }
             if let colorTemperature = light.colorTemperature {
                 HStack(spacing: 8) {
                     Image(systemName: "thermometer.medium")
@@ -109,6 +128,17 @@ struct LightCardView: View {
                 let rgb = HueColor.rgb(from: xy)
                 color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
             }
+            if let gradient = light.gradient {
+                // Une pipette par point possible, initialisée sur l'état actuel du bandeau.
+                let capable = min(max(gradient.pointsCapable ?? 5, 2), 5)
+                var colors = gradient.points.map { point -> Color in
+                    let rgb = HueColor.rgb(from: point.color.xy)
+                    return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+                }
+                if colors.isEmpty { colors = [color] }
+                while colors.count < capable { colors.append(colors[colors.count - 1]) }
+                gradientColors = Array(colors.prefix(capable))
+            }
         }
     }
 
@@ -130,6 +160,20 @@ struct LightCardView: View {
         case "sunbeam": "Rayon de soleil"
         case "enchant": "Enchanté"
         default: effect.capitalized
+        }
+    }
+
+    /// Même débounce que la couleur : seul le dernier état des pipettes part au bridge.
+    private func scheduleGradientSend() {
+        gradientTask?.cancel()
+        gradientTask = Task { [colors = gradientColors] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            let rgbs = colors.compactMap { NSColor($0).usingColorSpace(.sRGB) }
+                .map { (red: Double($0.redComponent), green: Double($0.greenComponent),
+                        blue: Double($0.blueComponent)) }
+            guard rgbs.count == colors.count else { return }
+            await state.setLightGradient(roomID: roomID, lightID: light.id, colors: rgbs)
         }
     }
 
