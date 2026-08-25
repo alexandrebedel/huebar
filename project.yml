@@ -38,6 +38,9 @@ targets:
     platform: macOS
     sources:
       - Sources/HueBarControls
+      # Intent partagé : il DOIT aussi être compilé dans l'app (mode .foreground),
+      # sinon le clic du contrôle est abandonné en silence.
+      - Sources/HueBarApp/OpenPanelIntent.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexbedel.huebar.controls

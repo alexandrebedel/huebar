@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = PanelWindowController(
             rootView: AppWindowView(state: state, musicEngine: musicEngine, recorder: recorderController))
         panel.onShow = { [state] in Task { await state?.refresh() } }
+        PanelOpener.open = { [weak self] in self?.panel.show() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {

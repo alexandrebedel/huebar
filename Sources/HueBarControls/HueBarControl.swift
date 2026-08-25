@@ -14,14 +14,3 @@ struct HueBarControl: ControlWidget {
         .description("Ouvre le panneau HueBar.")
     }
 }
-
-struct OpenPanelIntent: AppIntent {
-    static let title: LocalizedStringResource = "Ouvrir le panneau HueBar"
-    static let isDiscoverable: Bool = false
-    static let supportedModes: IntentModes = .foreground
-
-    @MainActor
-    func perform() async throws -> some IntentResult & OpensIntent {
-        .result(opensIntent: OpenURLIntent(URL(string: "huebar://panel")!))
-    }
-}
