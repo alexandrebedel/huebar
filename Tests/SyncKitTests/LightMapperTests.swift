@@ -98,7 +98,7 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
 @Test func sunsetThemeStaysWarm() {
     // Le thème contraint les teintes : en Sunset, le rouge doit dominer le bleu
     // en moyenne, malgré la rotation de teinte et les beats.
-    var mapper = LightMapper(mode: .club, theme: .sunset)
+    var mapper = LightMapper(mode: .club, anchors: SyncTheme.sunset.hueAnchors)
     var totalRed = 0.0
     var totalBlue = 0.0
     var time = 0.0
@@ -157,6 +157,38 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     let next = mapper.map(frame: frame(), channels: channels, time: 2.02)
     for (a, b) in zip(last, next) {
         #expect(abs(a.red - b.red) < 0.35) // transition lissée, pas de flip
+    }
+}
+
+@Test func customAnchorsConstrainHuesLikeBuiltinThemes() {
+    // Des ancres arbitraires (rouges/oranges) doivent contraindre comme un thème intégré.
+    var mapper = LightMapper(mode: .club, anchors: [0.0, 0.05, 0.95])
+    var totalRed = 0.0
+    var totalBlue = 0.0
+    var time = 0.0
+    for i in 0..<300 {
+        time += 0.02
+        for color in mapper.map(frame: frame(beat: i % 10 == 0), channels: channels, time: time) {
+            totalRed += color.red
+            totalBlue += color.blue
+        }
+    }
+    #expect(totalRed > totalBlue * 1.3)
+}
+
+@Test func anchorsSwitchLiveWithoutColorFlip() {
+    // Changement de thème pendant la sync : la transition reste lissée (pas de flip sec).
+    var mapper = LightMapper(mode: .chill, anchors: SyncTheme.ocean.hueAnchors)
+    var last: [ChannelColor] = []
+    for i in 0..<100 {
+        last = mapper.map(frame: frame(), channels: channels, time: Double(i) * 0.02)
+    }
+    mapper.anchors = SyncTheme.sunset.hueAnchors
+    let next = mapper.map(frame: frame(), channels: channels, time: 2.02)
+    for (a, b) in zip(last, next) {
+        #expect(abs(a.red - b.red) < 0.35)
+        #expect(abs(a.green - b.green) < 0.35)
+        #expect(abs(a.blue - b.blue) < 0.35)
     }
 }
 

@@ -57,7 +57,8 @@ public struct LightMapper {
     }
 
     private let mode: SyncMode
-    private let theme: SyncTheme
+    /// Ancres de teinte imposées (nil = spectre libre), modifiables en cours de route.
+    public var anchors: [Double]?
     /// Réglages utilisateur, modifiables en cours de route sans reset de l'état.
     public var tuning: SyncTuning
     private var baseHue = 0.62 // départ bleu nuit
@@ -67,9 +68,9 @@ public struct LightMapper {
     private var lastTime: Double?
     private var smoothedOutput: [UInt8: (red: Double, green: Double, blue: Double)] = [:]
 
-    public init(mode: SyncMode, theme: SyncTheme = .spectre, tuning: SyncTuning = .default) {
+    public init(mode: SyncMode, anchors: [Double]? = nil, tuning: SyncTuning = .default) {
         self.mode = mode
-        self.theme = theme
+        self.anchors = anchors
         self.tuning = tuning
     }
 
@@ -134,7 +135,7 @@ public struct LightMapper {
     /// Attire la teinte vers l'ancre du thème la plus proche (distance circulaire),
     /// en gardant une fraction de teinte libre pour les micro-variations.
     private func themedHue(_ hue: Double) -> Double {
-        guard let anchors = theme.hueAnchors else { return hue }
+        guard let anchors, !anchors.isEmpty else { return hue }
         let h = hue - floor(hue)
         var best = anchors[0]
         var bestDistance = 1.0

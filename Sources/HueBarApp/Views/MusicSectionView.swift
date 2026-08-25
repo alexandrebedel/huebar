@@ -16,6 +16,9 @@ struct MusicSectionView: View {
     @AppStorage("musicTheme") private var themeStorage = SyncTheme.spectre.rawValue
     @AppStorage("musicTuningClub") private var tuningClubStorage = ""
     @AppStorage("musicTuningChill") private var tuningChillStorage = ""
+    @AppStorage("musicCustomThemes") private var customThemesStorage = ""
+    @State private var editingTheme: CustomTheme?
+    @State private var editingThemeIsNew = false
     @State private var devices: [AudioInputDevice] = []
     @State private var activeSyncSource: DeviceInputSource?
     @State private var zone: EntertainmentConfig?
@@ -53,11 +56,43 @@ struct MusicSectionView: View {
             // Thèmes : la palette de couleurs imposée au mapper, quel que soit le mode.
             HStack(spacing: 8) {
                 ForEach(SyncTheme.allCases) { theme in
-                    ThemeChip(theme: theme, isSelected: engine.theme == theme) {
-                        engine.theme = theme
-                        themeStorage = theme.rawValue
+                    ThemeChip(label: theme.label, anchors: theme.hueAnchors,
+                              isSelected: themeStorage == theme.rawValue) {
+                        selectTheme(id: theme.rawValue, anchors: theme.hueAnchors)
                     }
                 }
+            }
+
+            // Thèmes custom : créés dans l'éditeur, même mécanique d'ancres.
+            HStack(spacing: 8) {
+                ForEach(customThemes) { theme in
+                    ThemeChip(label: theme.name, anchors: theme.anchors,
+                              isSelected: themeStorage == theme.selectionID) {
+                        selectTheme(id: theme.selectionID, anchors: theme.anchors)
+                    }
+                    .contextMenu {
+                        Button("Modifier…") {
+                            editingThemeIsNew = false
+                            editingTheme = theme
+                        }
+                        Button("Supprimer", role: .destructive) {
+                            deleteCustomTheme(theme)
+                        }
+                    }
+                }
+                Button {
+                    editingThemeIsNew = true
+                    editingTheme = CustomTheme(
+                        id: UUID(), name: "",
+                        anchors: [0.83, 0.5, 0.08, 0.62]) // départ varié, à retoucher
+                } label: {
+                    Image(systemName: "plus")
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(.quaternary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Créer un thème")
             }
 
             // Réglages fins du mapper, persistés par mode — ajustables pendant la sync.
@@ -162,8 +197,13 @@ struct MusicSectionView: View {
         .onAppear {
             devices = AudioDeviceCatalog.inputDevices()
             engine.mode = SyncMode(rawValue: modeStorage) ?? .club
-            engine.theme = SyncTheme(rawValue: themeStorage) ?? .spectre
             engine.tuning = loadTuning(for: engine.mode)
+            applyStoredTheme()
+        }
+        .sheet(item: $editingTheme) { theme in
+            ThemeEditorView(theme: theme, isNew: editingThemeIsNew) { saved in
+                saveCustomTheme(saved)
+            }
         }
         .task { await loadZoneMap() }
         .onChange(of: state.rooms) { _, _ in rebuildEntries() }
@@ -219,6 +259,45 @@ struct MusicSectionView: View {
             if let recordError = recorder.errorMessage {
                 Text(recordError).font(.caption).foregroundStyle(.red)
             }
+        }
+    }
+
+    // MARK: - Thèmes
+
+    private var customThemes: [CustomTheme] {
+        CustomTheme.decodeList(customThemesStorage)
+    }
+
+    private func selectTheme(id: String, anchors: [Double]?) {
+        themeStorage = id
+        engine.themeAnchors = anchors
+    }
+
+    /// Restaure le thème persisté (intégré ou custom) ; un custom disparu retombe sur Spectre.
+    private func applyStoredTheme() {
+        if let custom = customThemes.first(where: { $0.selectionID == themeStorage }) {
+            engine.themeAnchors = custom.anchors
+        } else {
+            let builtin = SyncTheme(rawValue: themeStorage) ?? .spectre
+            engine.themeAnchors = builtin.hueAnchors
+        }
+    }
+
+    private func saveCustomTheme(_ theme: CustomTheme) {
+        var themes = customThemes
+        if let index = themes.firstIndex(where: { $0.id == theme.id }) {
+            themes[index] = theme
+        } else {
+            themes.append(theme)
+        }
+        customThemesStorage = CustomTheme.encodeList(themes)
+        selectTheme(id: theme.selectionID, anchors: theme.anchors)
+    }
+
+    private func deleteCustomTheme(_ theme: CustomTheme) {
+        customThemesStorage = CustomTheme.encodeList(customThemes.filter { $0.id != theme.id })
+        if themeStorage == theme.selectionID {
+            selectTheme(id: SyncTheme.spectre.rawValue, anchors: SyncTheme.spectre.hueAnchors)
         }
     }
 
@@ -367,14 +446,15 @@ struct MusicSectionView: View {
     }
 }
 
-/// Pastille de thème : la palette de couleurs de la sync.
+/// Pastille de thème : la palette de couleurs de la sync (intégré ou custom).
 private struct ThemeChip: View {
-    let theme: SyncTheme
+    let label: String
+    let anchors: [Double]?
     let isSelected: Bool
     let action: () -> Void
 
     private var colors: [Color] {
-        guard let anchors = theme.hueAnchors else {
+        guard let anchors, !anchors.isEmpty else {
             return [0.0, 0.17, 0.33, 0.5, 0.67, 0.83].map {
                 Color(hue: $0, saturation: 0.85, brightness: 1)
             }
@@ -388,7 +468,7 @@ private struct ThemeChip: View {
                 Circle()
                     .fill(AngularGradient(colors: colors + [colors[0]], center: .center))
                     .frame(width: 16, height: 16)
-                Text(theme.label).font(.caption)
+                Text(label).font(.caption)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)

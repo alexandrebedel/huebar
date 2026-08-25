@@ -25,10 +25,12 @@ public final class MusicSyncEngine {
     /// aucune vue n'est à l'écran. Les consommateurs de la source (Recorder) s'y accrochent.
     public var onDidTeardown: (() -> Void)?
     public var mode: SyncMode = .club {
-        didSet { if mode != oldValue { mapper = LightMapper(mode: mode, theme: theme, tuning: tuning) } }
+        didSet { if mode != oldValue { mapper = LightMapper(mode: mode, anchors: themeAnchors, tuning: tuning) } }
     }
-    public var theme: SyncTheme = .spectre {
-        didSet { if theme != oldValue { mapper = LightMapper(mode: mode, theme: theme, tuning: tuning) } }
+    /// Ancres de teinte du thème courant (nil = spectre libre) — intégré ou custom,
+    /// appliquées en direct sans reset du mapper (pas de saut visuel).
+    public var themeAnchors: [Double]? {
+        didSet { if themeAnchors != oldValue { mapper.anchors = themeAnchors } }
     }
     /// Réglages fins : appliqués en direct, sans reset du mapper (pas de saut visuel).
     public var tuning: SyncTuning = .default {
