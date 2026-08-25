@@ -175,7 +175,7 @@ public final class HueState {
                 lights: lights.filter { deviceIDs.contains($0.owner.rid) }
             )
         }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        // Ordre du bridge préservé : c'est celui qu'affiche l'app Hue.
 
         let bridgeHome = grouped.first { $0.owner.rtype == "bridge_home" }
         let allZone = bridgeHome.map {

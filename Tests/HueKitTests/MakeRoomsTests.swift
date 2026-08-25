@@ -14,12 +14,13 @@ private let fixtures = (
         Light(id: "L3", metadata: Metadata(name: "Cuisine 1"), on: OnState(on: true),
               dimming: nil, color: nil, owner: ref("D3", "device")),
     ],
+    // Séjour d'abord : l'ordre du bridge (celui de l'app Hue) n'est pas alphabétique.
     rooms: [
-        Room(id: "R2", metadata: Metadata(name: "Cuisine"),
-             children: [ref("D3", "device")], services: [ref("G2", "grouped_light")]),
         Room(id: "R1", metadata: Metadata(name: "Séjour"),
              children: [ref("D1", "device"), ref("D2", "device")],
              services: [ref("G1", "grouped_light")]),
+        Room(id: "R2", metadata: Metadata(name: "Cuisine"),
+             children: [ref("D3", "device")], services: [ref("G2", "grouped_light")]),
     ],
     scenes: [
         HueScene(id: "S1", metadata: Metadata(name: "Repos"), group: ref("R1", "room")),
@@ -34,21 +35,21 @@ private let fixtures = (
     ]
 )
 
-@Test func buildsRoomsSortedByName() throws {
+@Test func buildsRoomsInBridgeOrder() throws {
     let built = HueState.makeRooms(
         lights: fixtures.lights, rooms: fixtures.rooms,
         scenes: fixtures.scenes, grouped: fixtures.grouped
     )
-    #expect(built.rooms.map(\.name) == ["Cuisine", "Séjour"])
+    #expect(built.rooms.map(\.name) == ["Séjour", "Cuisine"])
 
-    let sejour = try #require(built.rooms.last)
+    let sejour = try #require(built.rooms.first)
     #expect(sejour.groupedLightID == "G1")
     #expect(sejour.isOn == true)
     #expect(sejour.brightness == 35)
     #expect(sejour.lights.map(\.id) == ["L1", "L2"])
     #expect(sejour.scenes.map(\.id) == ["S1", "S2"])
 
-    let cuisine = try #require(built.rooms.first)
+    let cuisine = try #require(built.rooms.last)
     #expect(cuisine.isOn == false)
     #expect(cuisine.brightness == 100) // pas de dimming -> défaut
     #expect(cuisine.lights.map(\.id) == ["L3"])
