@@ -35,4 +35,26 @@ public enum HueColor {
         }
         return (min(1, reverseGamma(r)), min(1, reverseGamma(g)), min(1, reverseGamma(b)))
     }
+
+    /// Température mirek (1e6/K) -> RGB (0...1) pour l'affichage.
+    /// Approximation blackbody de Tanner Helland, suffisante pour des aperçus.
+    public static func rgb(fromMirek mirek: Int) -> (red: Double, green: Double, blue: Double) {
+        let kelvin = 1_000_000.0 / Double(max(mirek, 1))
+        let t = min(max(kelvin, 1000), 40000) / 100
+        func clamp01(_ value: Double) -> Double { min(1, max(0, value)) }
+
+        let red = t <= 66 ? 1 : clamp01(329.698727446 * pow(t - 60, -0.1332047592) / 255)
+        let green = t <= 66
+            ? clamp01((99.4708025861 * log(t) - 161.1195681661) / 255)
+            : clamp01(288.1221695283 * pow(t - 60, -0.0755148492) / 255)
+        let blue: Double
+        if t >= 66 {
+            blue = 1
+        } else if t <= 19 {
+            blue = 0
+        } else {
+            blue = clamp01((138.5177312231 * log(t - 10) - 305.0447927307) / 255)
+        }
+        return (red, green, blue)
+    }
 }

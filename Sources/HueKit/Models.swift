@@ -57,10 +57,45 @@ public struct Room: Codable, Identifiable, Sendable, Equatable {
     public var services: [ResourceRef]
 }
 
+public struct ColorTemperatureState: Codable, Sendable, Equatable {
+    public var mirek: Int?
+    public init(mirek: Int?) { self.mirek = mirek }
+}
+
+/// Action d'une scène : l'état qu'elle appliquera à une lampe (sous-ensemble affichage).
+public struct SceneAction: Codable, Sendable, Equatable {
+    public var action: Body
+
+    public struct Body: Codable, Sendable, Equatable {
+        public var on: OnState?
+        public var dimming: Dimming?
+        public var color: ColorState?
+        public var colorTemperature: ColorTemperatureState?
+
+        public init(
+            on: OnState? = nil, dimming: Dimming? = nil,
+            color: ColorState? = nil, colorTemperature: ColorTemperatureState? = nil
+        ) {
+            self.on = on
+            self.dimming = dimming
+            self.color = color
+            self.colorTemperature = colorTemperature
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case on, dimming, color
+            case colorTemperature = "color_temperature"
+        }
+    }
+
+    public init(action: Body) { self.action = action }
+}
+
 public struct HueScene: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var metadata: Metadata
     public var group: ResourceRef
+    public var actions: [SceneAction]?
 }
 
 public struct GroupedLight: Codable, Identifiable, Sendable, Equatable {
