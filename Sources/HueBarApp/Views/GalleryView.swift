@@ -27,14 +27,14 @@ struct GalleryView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(SceneGallery.scenarios) { scenario in
-                        GalleryCard(scenario: scenario, isSaved: isSaved(scenario)) {
-                            Task { await state.applyScenario(roomID: room.id, scenario) }
-                        } onSave: {
-                            savedNames.insert(scenario.name)
-                            Task { await state.saveScenario(roomID: room.id, scenario) }
-                        }
+                VStack(alignment: .leading, spacing: 12) {
+                    // Les scénarios pas encore dans la pièce d'abord.
+                    grid(for: pendingScenarios)
+                    if !addedScenarios.isEmpty {
+                        Text("Scènes ajoutées")
+                            .font(.headline)
+                            .padding(.top, 8)
+                        grid(for: addedScenarios)
                     }
                 }
                 .padding(.vertical, 2)
@@ -42,6 +42,27 @@ struct GalleryView: View {
         }
         .padding(16)
         .frame(width: 640, height: 500)
+    }
+
+    private func grid(for scenarios: [GalleryScenario]) -> some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(scenarios) { scenario in
+                GalleryCard(scenario: scenario, isSaved: isSaved(scenario)) {
+                    Task { await state.applyScenario(roomID: room.id, scenario) }
+                } onSave: {
+                    savedNames.insert(scenario.name)
+                    Task { await state.saveScenario(roomID: room.id, scenario) }
+                }
+            }
+        }
+    }
+
+    private var pendingScenarios: [GalleryScenario] {
+        SceneGallery.scenarios.filter { !isSaved($0) }
+    }
+
+    private var addedScenarios: [GalleryScenario] {
+        SceneGallery.scenarios.filter { isSaved($0) }
     }
 
     private func isSaved(_ scenario: GalleryScenario) -> Bool {
