@@ -4,7 +4,7 @@ import Testing
 
 @Suite(.serialized)
 struct HueClientTests {
-    private func makeClient() -> HueClient {
+    func makeClient() -> HueClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return HueClient(
@@ -13,7 +13,7 @@ struct HueClientTests {
         )
     }
 
-    private func ok(_ request: URLRequest, _ body: String) -> (HTTPURLResponse, Data) {
+    func ok(_ request: URLRequest, _ body: String) -> (HTTPURLResponse, Data) {
         (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
          Data(body.utf8))
     }

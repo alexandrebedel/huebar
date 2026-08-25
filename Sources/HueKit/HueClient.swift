@@ -21,7 +21,7 @@ final class BridgeTrustDelegate: NSObject, URLSessionDelegate, @unchecked Sendab
     }
 }
 
-public final class HueClient: HueControlling, Sendable {
+public final class HueClient: HueControlling, EntertainmentControlling, Sendable {
     private let config: HueConfig
     private let session: URLSession
 
@@ -55,6 +55,35 @@ public final class HueClient: HueControlling, Sendable {
         _ = try await send("PUT", "/clip/v2/resource/scene/\(id)", body: try encode(Body()))
     }
 
+    // MARK: - EntertainmentControlling
+
+    public func fetchEntertainmentConfigurations() async throws -> [EntertainmentConfig] {
+        try await list("entertainment_configuration")
+    }
+
+    public func startEntertainment(id: String) async throws {
+        try await putEntertainmentAction(id: id, action: "start")
+    }
+
+    public func stopEntertainment(id: String) async throws {
+        try await putEntertainmentAction(id: id, action: "stop")
+    }
+
+    /// L'identité PSK alternative (header `hue-application-id` de GET /auth/v1).
+    public func fetchApplicationID() async throws -> String {
+        let (_, response) = try await sendRaw("GET", "/auth/v1", body: nil)
+        guard let appID = response.value(forHTTPHeaderField: "hue-application-id") else {
+            throw HueError.invalidResponse
+        }
+        return appID
+    }
+
+    private func putEntertainmentAction(id: String, action: String) async throws {
+        struct Body: Encodable { let action: String }
+        _ = try await send("PUT", "/clip/v2/resource/entertainment_configuration/\(id)",
+                           body: try encode(Body(action: action)))
+    }
+
     // MARK: - Plomberie
 
     private func list<T: Decodable>(_ resource: String) async throws -> [T] {
@@ -69,6 +98,10 @@ public final class HueClient: HueControlling, Sendable {
     }
 
     private func send(_ method: String, _ path: String, body: Data?) async throws -> Data {
+        try await sendRaw(method, path, body: body).0
+    }
+
+    private func sendRaw(_ method: String, _ path: String, body: Data?) async throws -> (Data, HTTPURLResponse) {
         guard let url = URL(string: "https://\(config.bridgeIP)\(path)") else {
             throw HueError.invalidResponse
         }
@@ -82,6 +115,6 @@ public final class HueClient: HueControlling, Sendable {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HueError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else { throw HueError.badStatus(http.statusCode) }
-        return data
+        return (data, http)
     }
 }
