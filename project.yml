@@ -27,6 +27,10 @@ targets:
     dependencies:
       - package: HueBarPackage
         product: HueKit
+      - package: HueBarPackage
+        product: WaveKit
+      - package: HueBarPackage
+        product: SyncKit
       - target: HueBarControls
         embed: true
   HueBarControls:

@@ -38,5 +38,9 @@
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
     <string>HueBar pilote votre bridge Philips Hue directement sur le réseau local.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>HueBar analyse l'audio du Mac pour synchroniser vos lampes Hue avec la musique.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>HueBar capte l'entrée audio choisie (table de mixage, interface) pour synchroniser vos lampes et enregistrer vos mixes.</string>
 </dict>
 </plist>

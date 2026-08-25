@@ -1,16 +1,21 @@
 import AppKit
 import SwiftUI
 import HueKit
+import SyncKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let hotKeys = HotKeyCenter()
     private var state: HueState!
+    private var musicEngine: MusicSyncEngine?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
-            state = HueState(client: HueClient(config: try HueConfig.load()))
+            let config = try HueConfig.load()
+            let client = HueClient(config: config)
+            state = HueState(client: client)
+            musicEngine = MusicSyncEngine(config: config, entertainment: client, transport: DTLSStreamer())
         } catch {
             state = HueState(
                 client: nil,
@@ -19,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PanelView(state: state))
+        popover.contentViewController = NSHostingController(
+            rootView: PanelView(state: state, musicEngine: musicEngine))
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
