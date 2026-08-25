@@ -1,0 +1,46 @@
+name: HueBar
+options:
+  deploymentTarget:
+    macOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+packages:
+  HueBarPackage:
+    path: .
+targets:
+  HueBar:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/HueBarApp
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexbedel.huebar
+        INFOPLIST_FILE: Support/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "5.0"
+    dependencies:
+      - package: HueBarPackage
+        product: HueKit
+      - target: HueBarControls
+        embed: true
+  HueBarControls:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Sources/HueBarControls
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexbedel.huebar.controls
+        INFOPLIST_FILE: Support/ControlsInfo.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+    entitlements:
+      path: Support/HueBarControls.entitlements
+      properties:
+        com.apple.security.app-sandbox: true

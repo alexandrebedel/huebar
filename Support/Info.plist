@@ -36,5 +36,7 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>HueBar pilote votre bridge Philips Hue directement sur le réseau local.</string>
 </dict>
 </plist>

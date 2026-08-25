@@ -1,5 +1,5 @@
-APP = build/HueBar.app
-BINARY = .build/release/HueBarApp
+APP = DerivedData/Build/Products/Release/HueBar.app
+LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister
 
 .PHONY: test app install clean
 
@@ -7,18 +7,15 @@ test:
 	swift test
 
 app:
-	swift build -c release
-	rm -rf $(APP)
-	mkdir -p $(APP)/Contents/MacOS
-	cp $(BINARY) $(APP)/Contents/MacOS/HueBar
-	cp Support/Info.plist $(APP)/Contents/Info.plist
-	codesign --force -s - $(APP)
+	xcodegen generate
+	xcodebuild -project HueBar.xcodeproj -scheme HueBar -configuration Release -derivedDataPath DerivedData build
 
 install: app
 	killall HueBar 2>/dev/null || true
 	rm -rf /Applications/HueBar.app
-	cp -R $(APP) /Applications/
+	ditto "$(APP)" /Applications/HueBar.app
+	$(LSREGISTER) -f -R -trusted /Applications/HueBar.app
 	open /Applications/HueBar.app
 
 clean:
-	rm -rf .build build
+	rm -rf .build build DerivedData HueBar.xcodeproj

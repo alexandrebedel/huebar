@@ -4,6 +4,9 @@ import PackageDescription
 let package = Package(
     name: "HueBar",
     platforms: [.macOS(.v15)],
+    products: [
+        .library(name: "HueKit", targets: ["HueKit"]),
+    ],
     targets: [
         .target(name: "HueKit"),
         .executableTarget(
