@@ -51,9 +51,10 @@ public struct LightMapper {
         }
         flash = max(0, flash - dt * 6) // decay ~170 ms
 
-        // Basses soutenues -> déjà lumineux (retour utilisateur : trop faible avant) ;
-        // le silence reste sombre.
-        let brightness = min(1, 0.08 + min(0.75, smoothedBass * 0.85) + flash * 0.7)
+        // Mix spectral : les basses portent, mais mids/aigus (nappes, hats) participent
+        // aussi à la luminosité — retour utilisateur : « très axé sur les basses ».
+        let energy = min(1, smoothedBass * 0.7 + frame.mid * 0.35 + frame.high * 0.25)
+        let brightness = min(1, 0.06 + energy * 0.85 + flash * 0.6)
         let saturation = max(0.55, 1 - min(0.4, frame.high * 0.5))
 
         return channels.map { channel in
@@ -68,7 +69,7 @@ public struct LightMapper {
         let spectralPull = min(0.3, frame.high * 0.4) - min(0.2, frame.bass * 0.2)
         baseHue = (baseHue + dt * (0.008 + spectralPull * 0.02) + 1).truncatingRemainder(dividingBy: 1)
 
-        let brightness = min(1, 0.12 + smoothedRMS * 1.1)
+        let brightness = min(1, 0.10 + smoothedRMS * 1.2 + frame.mid * 0.15)
         let saturation = 0.6
 
         return channels.map { channel in
@@ -96,7 +97,11 @@ public struct LightMapper {
     }
 
     /// HSV -> RGB (h, s, v dans 0...1).
-    private func color(channel: UInt8, hue: Double, saturation: Double, value: Double) -> ChannelColor {
+    private func color(channel: UInt8, hue: Double, saturation: Double, value rawValue: Double) -> ChannelColor {
+        // Levée perceptuelle : sous ~0.5 en linéaire les Hue paraissent presque éteintes
+        // (retour utilisateur : « ça éclaire rien ») ; gamma 0.6 remonte les niveaux moyens
+        // sans écraser la dynamique ni allumer le silence.
+        let value = pow(max(0, rawValue), 0.6)
         let h = (hue - floor(hue)) * 6
         let sector = Int(h) % 6
         let f = h - floor(h)

@@ -21,7 +21,10 @@ final class PanelWindowController {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.collectionBehavior = [.moveToActiveSpace]
+        // Flottante : un panneau de contrôle ne doit pas disparaître derrière l'app
+        // active (les popups TCC volent le focus et la renvoyaient à l'arrière-plan).
+        window.level = .floating
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             window.standardWindowButton(button)?.isHidden = true
         }
