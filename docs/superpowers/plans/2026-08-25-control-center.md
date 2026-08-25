@@ -34,7 +34,8 @@
 ### Task A3 : Vérification réelle
 
 - [x] A3.1 Automatisé : pluginkit OK, app relancée, deep link `open "huebar://panel"` ouvre le panneau.
-- [x] A3.2 Utilisateur : ajouter le contrôle (Control Center → Modifier les contrôles ; si absent : clic droit bureau → Modifier les widgets, puis réessayer) et cliquer. Si le clic n'ouvre pas l'app → appliquer le fallback dual-target (intent partagé, perform in-app ouvre le popover sans URL) et réinstaller.
+- [ ] A3.2 Utilisateur : ajouter le contrôle (Control Center → Modifier les contrôles ; si absent : clic droit bureau → Modifier les widgets, puis réessayer) et cliquer. Si le clic n'ouvre pas l'app → appliquer le fallback dual-target (intent partagé, perform in-app ouvre le popover sans URL) et réinstaller.
 
 ## Vérification finale
-- [x] `make test` vert ; `make install` OK ; contrôle visible et fonctionnel ; menu bar/⌥H/login item inchangés.
+- [x] `make test` vert ; `make install` OK ; menu bar/⌥H/login item inchangés.
+- [ ] Contrôle visible et fonctionnel dans le Control Center (validation utilisateur).
