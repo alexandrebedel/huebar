@@ -6,6 +6,7 @@ import SyncKit
 struct PanelView: View {
     let state: HueState
     var musicEngine: MusicSyncEngine?
+    var recorder: RecorderController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -49,8 +50,8 @@ struct PanelView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if let musicEngine {
-                        MusicSectionView(engine: musicEngine)
+                    if let musicEngine, let recorder {
+                        MusicSectionView(engine: musicEngine, recorder: recorder)
                     }
                     if let all = state.all, !all.scenes.isEmpty {
                         SceneChipsView(title: "Maison", scenes: all.scenes, state: state)

@@ -3,12 +3,14 @@ import SwiftUI
 import HueKit
 import SyncKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let hotKeys = HotKeyCenter()
     private var state: HueState!
     private var musicEngine: MusicSyncEngine?
+    private let recorderController = RecorderController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -25,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
-            rootView: PanelView(state: state, musicEngine: musicEngine))
+            rootView: PanelView(state: state, musicEngine: musicEngine, recorder: recorderController))
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
