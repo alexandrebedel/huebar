@@ -14,6 +14,8 @@ struct MusicSectionView: View {
     @AppStorage("musicMutedRooms") private var mutedRoomsStorage = ""
     @AppStorage("musicMode") private var modeStorage = SyncMode.club.rawValue
     @AppStorage("musicTheme") private var themeStorage = SyncTheme.spectre.rawValue
+    @AppStorage("musicTuningClub") private var tuningClubStorage = ""
+    @AppStorage("musicTuningChill") private var tuningChillStorage = ""
     @State private var devices: [AudioInputDevice] = []
     @State private var activeSyncSource: DeviceInputSource?
     @State private var zone: EntertainmentConfig?
@@ -42,6 +44,7 @@ struct MusicSectionView: View {
                 ForEach(SyncMode.allCases) { mode in
                     MusicModeCard(mode: mode, isSelected: engine.mode == mode) {
                         engine.mode = mode
+                        engine.tuning = loadTuning(for: mode) // chaque mode garde ses réglages
                         modeStorage = mode.rawValue
                     }
                 }
@@ -55,6 +58,33 @@ struct MusicSectionView: View {
                         themeStorage = theme.rawValue
                     }
                 }
+            }
+
+            // Réglages fins du mapper, persistés par mode — ajustables pendant la sync.
+            DisclosureGroup {
+                VStack(spacing: 6) {
+                    tuningRow("Sensibilité", value: tuningBinding(\.sensitivity), range: 0.4...2,
+                              help: "Énergie lumineuse globale")
+                    tuningRow("Attaque", value: tuningBinding(\.punch), range: 0.5...2,
+                              help: "Réactivité aux transitoires (élevé = sec)")
+                    if engine.mode == .club {
+                        tuningRow("Flash", value: tuningBinding(\.flash), range: 0...0.6,
+                                  help: "Poids du flash sur les beats")
+                    }
+                    HStack {
+                        Spacer()
+                        Button("Réinitialiser") {
+                            engine.tuning = .default
+                            saveTuning(.default, for: engine.mode)
+                        }
+                        .controlSize(.mini)
+                        .disabled(engine.tuning == .default)
+                    }
+                }
+                .padding(.top, 4)
+            } label: {
+                Label("Réglages fins", systemImage: "slider.horizontal.3")
+                    .font(.subheadline)
             }
 
             HStack(spacing: 8) {
@@ -133,6 +163,7 @@ struct MusicSectionView: View {
             devices = AudioDeviceCatalog.inputDevices()
             engine.mode = SyncMode(rawValue: modeStorage) ?? .club
             engine.theme = SyncTheme(rawValue: themeStorage) ?? .spectre
+            engine.tuning = loadTuning(for: engine.mode)
         }
         .task { await loadZoneMap() }
         .onChange(of: state.rooms) { _, _ in rebuildEntries() }
@@ -189,6 +220,44 @@ struct MusicSectionView: View {
                 Text(recordError).font(.caption).foregroundStyle(.red)
             }
         }
+    }
+
+    // MARK: - Réglages fins
+
+    private func tuningRow(
+        _ title: String, value: Binding<Double>, range: ClosedRange<Double>, help: String
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .frame(width: 72, alignment: .leading)
+            Slider(value: value, in: range)
+                .controlSize(.small)
+        }
+        .help(help)
+    }
+
+    private func tuningBinding(_ keyPath: WritableKeyPath<SyncTuning, Double>) -> Binding<Double> {
+        Binding(
+            get: { engine.tuning[keyPath: keyPath] },
+            set: { newValue in
+                engine.tuning[keyPath: keyPath] = newValue
+                saveTuning(engine.tuning, for: engine.mode)
+            }
+        )
+    }
+
+    private func loadTuning(for mode: SyncMode) -> SyncTuning {
+        let raw = mode == .club ? tuningClubStorage : tuningChillStorage
+        guard let data = raw.data(using: .utf8),
+              let tuning = try? JSONDecoder().decode(SyncTuning.self, from: data) else { return .default }
+        return tuning
+    }
+
+    private func saveTuning(_ tuning: SyncTuning, for mode: SyncMode) {
+        guard let data = try? JSONEncoder().encode(tuning) else { return }
+        let raw = String(decoding: data, as: UTF8.self)
+        if mode == .club { tuningClubStorage = raw } else { tuningChillStorage = raw }
     }
 
     private func toggle() async {

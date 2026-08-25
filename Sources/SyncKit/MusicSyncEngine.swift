@@ -25,10 +25,14 @@ public final class MusicSyncEngine {
     /// aucune vue n'est à l'écran. Les consommateurs de la source (Recorder) s'y accrochent.
     public var onDidTeardown: (() -> Void)?
     public var mode: SyncMode = .club {
-        didSet { if mode != oldValue { mapper = LightMapper(mode: mode, theme: theme) } }
+        didSet { if mode != oldValue { mapper = LightMapper(mode: mode, theme: theme, tuning: tuning) } }
     }
     public var theme: SyncTheme = .spectre {
-        didSet { if theme != oldValue { mapper = LightMapper(mode: mode, theme: theme) } }
+        didSet { if theme != oldValue { mapper = LightMapper(mode: mode, theme: theme, tuning: tuning) } }
+    }
+    /// Réglages fins : appliqués en direct, sans reset du mapper (pas de saut visuel).
+    public var tuning: SyncTuning = .default {
+        didSet { if tuning != oldValue { mapper.tuning = tuning } }
     }
     /// Channels gelés (pièces exclues de la sync) : cette couleur est envoyée telle
     /// quelle à la place du mapping — la pièce garde son éclairage pendant la sync.

@@ -113,6 +113,53 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     #expect(totalRed > totalBlue * 1.3)
 }
 
+@Test func sensitivityScalesBrightnessInBothModes() {
+    for mode in SyncMode.allCases {
+        var hot = LightMapper(mode: mode, tuning: SyncTuning(sensitivity: 2))
+        var cold = LightMapper(mode: mode, tuning: SyncTuning(sensitivity: 0.4))
+        var hotColors: [ChannelColor] = []
+        var coldColors: [ChannelColor] = []
+        for i in 0..<150 {
+            let time = Double(i) * 0.02
+            hotColors = hot.map(frame: frame(), channels: channels, time: time)
+            coldColors = cold.map(frame: frame(), channels: channels, time: time)
+        }
+        func luminance(_ colors: [ChannelColor]) -> Double {
+            colors.reduce(0) { $0 + $1.red + $1.green + $1.blue }
+        }
+        #expect(luminance(hotColors) > luminance(coldColors), "\(mode)")
+    }
+}
+
+@Test func zeroFlashKillsTheBeatBump() {
+    // Flash à 0 : un beat n'ajoute plus de bump de luminosité (le saut de teinte reste).
+    var noFlash = LightMapper(mode: .club, tuning: SyncTuning(flash: 0))
+    var withFlash = LightMapper(mode: .club, tuning: SyncTuning(flash: 0.6))
+    _ = noFlash.map(frame: frame(), channels: channels, time: 0)
+    _ = withFlash.map(frame: frame(), channels: channels, time: 0)
+    func luminance(_ colors: [ChannelColor]) -> Double {
+        colors.reduce(0) { $0 + $1.red + $1.green + $1.blue }
+    }
+    let quiet = luminance(noFlash.map(frame: frame(beat: true), channels: channels, time: 0.02))
+    let loud = luminance(withFlash.map(frame: frame(beat: true), channels: channels, time: 0.02))
+    #expect(loud > quiet)
+}
+
+@Test func tuningUpdatesLiveWithoutStateReset() {
+    // Le réglage change en cours de route : la teinte ne saute pas (pas de reset),
+    // mais la luminosité suit la nouvelle sensibilité.
+    var mapper = LightMapper(mode: .chill)
+    var last: [ChannelColor] = []
+    for i in 0..<100 {
+        last = mapper.map(frame: frame(), channels: channels, time: Double(i) * 0.02)
+    }
+    mapper.tuning = SyncTuning(sensitivity: 2)
+    let next = mapper.map(frame: frame(), channels: channels, time: 2.02)
+    for (a, b) in zip(last, next) {
+        #expect(abs(a.red - b.red) < 0.35) // transition lissée, pas de flip
+    }
+}
+
 @Test func silenceIsDimInBothModes() {
     for mode in SyncMode.allCases {
         var mapper = LightMapper(mode: mode)

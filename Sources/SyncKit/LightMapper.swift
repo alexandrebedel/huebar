@@ -37,7 +37,6 @@ public struct LightMapper {
         static let clubBassWeight = 0.6, clubMidWeight = 0.3, clubHighWeight = 0.2
         static let clubBaseBrightness = 0.06
         static let clubEnergyGain = 0.75
-        static let clubFlashGain = 0.30
         static let clubMinSaturation = 0.55
         static let clubHighDesaturation = 0.5
         static let clubChannelHueSpread = 0.06
@@ -59,6 +58,8 @@ public struct LightMapper {
 
     private let mode: SyncMode
     private let theme: SyncTheme
+    /// Réglages utilisateur, modifiables en cours de route sans reset de l'état.
+    public var tuning: SyncTuning
     private var baseHue = 0.62 // départ bleu nuit
     private var flash = 0.0    // niveau de flash (Club), décroît vite
     private var smoothedRMS = 0.0
@@ -66,9 +67,10 @@ public struct LightMapper {
     private var lastTime: Double?
     private var smoothedOutput: [UInt8: (red: Double, green: Double, blue: Double)] = [:]
 
-    public init(mode: SyncMode, theme: SyncTheme = .spectre) {
+    public init(mode: SyncMode, theme: SyncTheme = .spectre, tuning: SyncTuning = .default) {
         self.mode = mode
         self.theme = theme
+        self.tuning = tuning
     }
 
     public mutating func map(frame: AnalysisFrame, channels: [SyncChannel], time: Double) -> [ChannelColor] {
@@ -96,11 +98,11 @@ public struct LightMapper {
         flash = max(0, flash - dt * Tuning.clubFlashDecayPerSecond)
 
         // Mix spectral : les basses portent, mais nappes (mids) et hats (aigus) participent.
-        let energy = min(1, smoothedBass * Tuning.clubBassWeight
+        let energy = min(1, (smoothedBass * Tuning.clubBassWeight
             + frame.mid * Tuning.clubMidWeight
-            + frame.high * Tuning.clubHighWeight)
+            + frame.high * Tuning.clubHighWeight) * tuning.sensitivity)
         let brightness = min(1, Tuning.clubBaseBrightness + energy * Tuning.clubEnergyGain
-            + flash * Tuning.clubFlashGain)
+            + flash * tuning.flash)
         let saturation = max(Tuning.clubMinSaturation,
                              1 - min(0.4, frame.high * Tuning.clubHighDesaturation))
         let anchoredHue = themedHue(baseHue + frame.high * Tuning.clubHighHueShift)
@@ -119,8 +121,8 @@ public struct LightMapper {
             .truncatingRemainder(dividingBy: 1)
 
         // Respire avec le morceau : RMS large bande + houle des basses.
-        let brightness = min(1, Tuning.chillBaseBrightness + smoothedRMS * Tuning.chillRMSGain
-            + smoothedBass * Tuning.chillBassGain + frame.mid * Tuning.chillMidGain)
+        let brightness = min(1, Tuning.chillBaseBrightness + (smoothedRMS * Tuning.chillRMSGain
+            + smoothedBass * Tuning.chillBassGain + frame.mid * Tuning.chillMidGain) * tuning.sensitivity)
         let anchoredHue = themedHue(baseHue)
 
         return channels.map { channel in
@@ -153,9 +155,10 @@ public struct LightMapper {
     /// EMA asymétrique par composante : l'attaque garde le punch des beats,
     /// la descente évite les flips secs de couleur.
     private mutating func smoothedColor(_ target: ChannelColor, dt: Double) -> ChannelColor {
-        let (tauUp, tauDown) = mode == .club
+        var (tauUp, tauDown) = mode == .club
             ? (Tuning.clubAttack, Tuning.clubRelease)
             : (Tuning.chillAttack, Tuning.chillRelease)
+        tauUp /= max(0.1, tuning.punch) // punch élevé = attaque plus sèche
         guard let previous = smoothedOutput[target.channel] else {
             smoothedOutput[target.channel] = (target.red, target.green, target.blue)
             return target
