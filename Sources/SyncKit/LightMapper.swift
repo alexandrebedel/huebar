@@ -23,21 +23,21 @@ public struct LightMapper {
 
         // Lissage des entrées d'analyse.
         static let rmsInputGain = 2.5
-        static let rmsSmoothingRate = 3.0  // 1/s
+        static let rmsSmoothingRate = 4.5  // 1/s — suit le morceau de près (Chill réactif)
         static let bassSmoothingRate = 5.0 // 1/s
 
         // Lissage de sortie par channel (EMA asymétrique), en secondes.
-        static let clubAttack = 0.08, clubRelease = 0.30
-        static let chillAttack = 0.15, chillRelease = 0.35
+        static let clubAttack = 0.12, clubRelease = 0.30
+        static let chillAttack = 0.08, chillRelease = 0.35
 
         // Club.
         static let clubHueDriftPerSecond = 0.02
-        static let clubBeatHueJump = 0.08
-        static let clubFlashDecayPerSecond = 5.0 // extinction du flash ~200 ms
+        static let clubBeatHueJump = 0.05
+        static let clubFlashDecayPerSecond = 4.0 // extinction du flash ~250 ms
         static let clubBassWeight = 0.6, clubMidWeight = 0.3, clubHighWeight = 0.2
         static let clubBaseBrightness = 0.06
         static let clubEnergyGain = 0.75
-        static let clubFlashGain = 0.45
+        static let clubFlashGain = 0.30
         static let clubMinSaturation = 0.55
         static let clubHighDesaturation = 0.5
         static let clubChannelHueSpread = 0.06
