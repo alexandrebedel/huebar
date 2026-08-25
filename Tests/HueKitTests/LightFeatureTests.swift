@@ -70,6 +70,8 @@ private func whiteLight(id: String = "L3", device: String = "D3") -> Light {
     await state.refresh()
     #expect(state.rooms[0].scenes[0].isActive)
 }
+
+@Test func lightUpdateEncodesTemperatureAndEffect() throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
 
