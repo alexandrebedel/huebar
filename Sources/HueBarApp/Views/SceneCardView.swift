@@ -42,6 +42,19 @@ struct SceneCardView: View {
             .frame(height: 84)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.12)))
+            .overlay(alignment: .topTrailing) {
+                // Les scènes officielles ont une image publique ; sans elle, la scène
+                // a été créée par API — donc par HueBar.
+                if scene.metadata.image == nil {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(4)
+                        .background(.black.opacity(0.3), in: Circle())
+                        .padding(6)
+                        .help("Créée avec HueBar")
+                }
+            }
             .scaleEffect(hovering ? 1.03 : 1)
             .animation(.easeOut(duration: 0.12), value: hovering)
         }

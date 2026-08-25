@@ -37,6 +37,19 @@ private func whiteLight(id: String = "L3", device: String = "D3") -> Light {
     #expect(light.effects?.status == "candle")
 }
 
+@Test func sceneMetadataImageDiscriminatesOfficialScenes() throws {
+    let official = """
+    {"id":"S1","metadata":{"name":"Honolulu","image":{"rid":"IMG1","rtype":"public_image"}},
+     "group":{"rid":"R1","rtype":"room"}}
+    """
+    let created = #"{"id":"S2","metadata":{"name":"Tokyo"},"group":{"rid":"R1","rtype":"room"}}"#
+    let decoder = JSONDecoder()
+    let officialScene = try decoder.decode(HueScene.self, from: Data(official.utf8))
+    let createdScene = try decoder.decode(HueScene.self, from: Data(created.utf8))
+    #expect(officialScene.metadata.image == ResourceRef(rid: "IMG1", rtype: "public_image"))
+    #expect(createdScene.metadata.image == nil)
+}
+
 @Test func lightUpdateEncodesTemperatureAndEffect() throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys

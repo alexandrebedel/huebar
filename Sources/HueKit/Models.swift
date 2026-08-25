@@ -7,7 +7,14 @@ public struct HueResponse<T: Decodable>: Decodable {
 
 public struct Metadata: Codable, Sendable, Equatable {
     public var name: String
-    public init(name: String) { self.name = name }
+    /// Image officielle (`public_image`) — présente sur les scènes créées via l'app
+    /// Hue, absente de celles créées par API : discrimine les scènes HueBar.
+    public var image: ResourceRef?
+
+    public init(name: String, image: ResourceRef? = nil) {
+        self.name = name
+        self.image = image
+    }
 }
 
 public struct OnState: Codable, Sendable, Equatable {
