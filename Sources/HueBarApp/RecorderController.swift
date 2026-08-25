@@ -16,6 +16,10 @@ final class RecorderController {
     private(set) var lastFileURL: URL?
     var errorMessage: String?
 
+    /// Vrai quand l'enregistrement dépend de la source de la sync (pas de capture dédiée) :
+    /// si la sync s'arrête, l'enregistrement doit être finalisé avec elle.
+    var isSharingExternalSource: Bool { isRecording && standaloneSource == nil }
+
     func start(sharing syncSource: DeviceInputSource?,
                device: AudioInputDevice,
                pair: (left: Int, right: Int)) {

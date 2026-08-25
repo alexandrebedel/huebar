@@ -9,6 +9,11 @@ public final class Recorder {
     private let directory: URL
     private let writerQueue = DispatchQueue(label: "huebar.recorder.writer")
     private var file: AVAudioFile?
+    // `append` tourne sur le thread du tap audio pendant que start/stop tournent sur le
+    // MainActor : l'état partagé (actif + format) est protégé par un lock, et `file`
+    // n'est touché après le start que depuis writerQueue.
+    private let stateLock = NSLock()
+    private var isActive = false
     private var stereoFormat: AVAudioFormat?
     public private(set) var currentFileURL: URL?
     public private(set) var startedAt: Date?
@@ -18,7 +23,7 @@ public final class Recorder {
         self.directory = directory
     }
 
-    public var isRecording: Bool { file != nil }
+    public var isRecording: Bool { stateLock.withLock { isActive } }
 
     public func start(sampleRate: Double, filePrefix: String = "PX5") throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -39,8 +44,11 @@ public final class Recorder {
         let newFile = try AVAudioFile(forWriting: url, settings: settings,
                                       commonFormat: .pcmFormatFloat32, interleaved: false)
         file = newFile
-        stereoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
-                                     channels: 2, interleaved: false)
+        stateLock.withLock {
+            stereoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+                                         channels: 2, interleaved: false)
+            isActive = true
+        }
         currentFileURL = url
         startedAt = Date()
     }
@@ -48,10 +56,11 @@ public final class Recorder {
     /// Extrait la paire (left, right) d'un buffer multi-canaux, copie en stéréo, écrit en asynchrone.
     /// Appelable depuis la queue du tap audio.
     public func append(from buffer: AVAudioPCMBuffer, left: Int, right: Int) {
-        guard let file, let stereoFormat, let source = buffer.floatChannelData else { return }
+        let format: AVAudioFormat? = stateLock.withLock { isActive ? stereoFormat : nil }
+        guard let format, let source = buffer.floatChannelData else { return }
         let frames = buffer.frameLength
         guard frames > 0,
-              let stereo = AVAudioPCMBuffer(pcmFormat: stereoFormat, frameCapacity: frames) else { return }
+              let stereo = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
         stereo.frameLength = frames
         let channelCount = Int(buffer.format.channelCount)
         let leftIndex = min(left, channelCount - 1)
@@ -59,17 +68,24 @@ public final class Recorder {
         let byteCount = Int(frames) * MemoryLayout<Float>.size
         memcpy(stereo.floatChannelData![0], source[leftIndex], byteCount)
         memcpy(stereo.floatChannelData![1], source[rightIndex], byteCount)
-        writerQueue.async {
+        writerQueue.async { [weak self] in
+            guard let file = self?.file else { return }
             try? file.write(from: stereo)
         }
     }
 
     public func stop() {
-        guard let file else { return }
-        writerQueue.sync {} // draine les écritures en attente
-        file.close()
-        self.file = nil
-        stereoFormat = nil
+        let wasActive = stateLock.withLock {
+            let active = isActive
+            isActive = false
+            stereoFormat = nil
+            return active
+        }
+        guard wasActive || file != nil else { return }
+        writerQueue.sync { [self] in
+            file?.close() // finalise le header RIFF — indispensable
+            file = nil
+        }
         startedAt = nil
     }
 }

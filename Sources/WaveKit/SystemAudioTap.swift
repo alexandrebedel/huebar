@@ -60,7 +60,12 @@ public final class SystemAudioTap: AudioSource {
         aggregateID = newAggregateID
 
         status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, inputData, _, _, _ in
-            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+            let allBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+            // Si la sortie par défaut est un périphérique duplex (interface USB, AirPods…),
+            // ses propres canaux d'ENTRÉE arrivent aussi dans l'aggregate et pollueraient le
+            // mix : quand un buffer stéréo (le format du tap) est présent, on ignore le reste.
+            let stereoOnly = allBuffers.filter { $0.mNumberChannels == 2 }
+            let buffers = stereoOnly.isEmpty ? Array(allBuffers) : stereoOnly
             var mono: [Float] = []
             for buffer in buffers where buffer.mData != nil {
                 let channelCount = max(1, Int(buffer.mNumberChannels))

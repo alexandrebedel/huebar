@@ -97,9 +97,12 @@ struct MusicSectionView: View {
             devices = AudioDeviceCatalog.inputDevices()
         }
         .onChange(of: engine.state) { _, newState in
-            // La source partagée est morte avec la sync : finaliser le fichier proprement.
-            if case .error = newState, recorder.isRecording, activeSyncSource != nil {
+            // Toute sortie de .running tue la source de la sync : un enregistrement qui la
+            // partageait doit être finalisé (un REC standalone, lui, survit).
+            if newState != .running, newState != .starting, recorder.isSharingExternalSource {
                 recorder.stop()
+            }
+            if case .error = newState {
                 activeSyncSource = nil
             }
         }
@@ -150,6 +153,10 @@ struct MusicSectionView: View {
 
     private func toggle() async {
         if isRunning {
+            // Un REC accroché à la source de la sync mourrait silencieusement avec elle.
+            if recorder.isSharingExternalSource {
+                recorder.stop()
+            }
             await engine.stop()
             activeSyncSource = nil
             return

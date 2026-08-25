@@ -56,7 +56,12 @@ public final class DTLSStreamer: EntertainmentTransport, @unchecked Sendable {
         let conn = NWConnection(host: NWEndpoint.Host(host), port: 2100, using: parameters)
         queue.sync { self.connection = conn }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        // withTaskCancellationHandler : quand le timeout du groupe annule cette tâche,
+        // conn.cancel() force l'état .cancelled qui résume la continuation — sans lui,
+        // une connexion bloquée en .waiting (permission réseau refusée, bridge muet)
+        // suspendrait connect() pour toujours.
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let resumed = OSAllocatedUnfairLock(initialState: false)
             @Sendable func resumeOnce(_ body: () -> Void) -> Bool {
                 let first = resumed.withLock { alreadyResumed in
@@ -73,10 +78,12 @@ public final class DTLSStreamer: EntertainmentTransport, @unchecked Sendable {
                     self?.isReady = true
                     _ = resumeOnce { continuation.resume() }
                 case .failed(let error):
+                    self?.isReady = false
                     if !resumeOnce({ continuation.resume(throwing: error) }) {
                         self?.onDisconnect?(error.localizedDescription)
                     }
                 case .cancelled:
+                    self?.isReady = false
                     _ = resumeOnce { continuation.resume(throwing: HueError.streamTimeout) }
                 case .waiting:
                     break // retransmissions DTLS ou attente de la permission réseau local
@@ -85,6 +92,9 @@ public final class DTLSStreamer: EntertainmentTransport, @unchecked Sendable {
                 }
             }
             conn.start(queue: queue)
+            }
+        } onCancel: {
+            conn.cancel()
         }
     }
 

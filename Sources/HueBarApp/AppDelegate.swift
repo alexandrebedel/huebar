@@ -59,6 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Quitter pendant un enregistrement laisserait un WAV au header non finalisé (illisible),
+    /// et un streaming actif verrouillerait la zone du bridge ~10 s : on ferme proprement.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        recorderController.stop() // synchrone : draine et finalise le fichier
+        guard let musicEngine, musicEngine.state == .running || musicEngine.state == .starting else {
+            return .terminateNow
+        }
+        Task { @MainActor in
+            await musicEngine.stop()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     /// « Ouvrir au login » actif par défaut, mais on respecte un choix utilisateur ultérieur.
     private func registerLoginItemOnFirstLaunch() {
         let key = "didConfigureLoginItem"

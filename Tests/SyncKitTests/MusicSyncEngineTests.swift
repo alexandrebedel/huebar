@@ -135,6 +135,26 @@ private func makeEngine(clientKey: String? = "05C37B87131DA78EA028CE0429AE3F94")
 }
 
 @MainActor
+@Test func transportDisconnectSurfacesErrorAndTearsDown() async throws {
+    let (engine, entertainment, transport) = makeEngine()
+    let source = FakeSource()
+    await engine.start(source: source)
+    #expect(engine.state == .running)
+
+    transport.onDisconnect?("connexion coupée")
+    try await Task.sleep(for: .milliseconds(80))
+
+    guard case .error(let message) = engine.state else {
+        Issue.record("expected error state, got \(engine.state)")
+        return
+    }
+    #expect(message.contains("connexion coupée"))
+    #expect(transport.closed)
+    #expect(source.stopCount == 1)
+    #expect(entertainment.stopped.count == 1)
+}
+
+@MainActor
 @Test func audioSamplesDriveTheLevel() async throws {
     let (engine, _, _) = makeEngine()
     let source = FakeSource()

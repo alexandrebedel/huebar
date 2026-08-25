@@ -10,9 +10,22 @@ public final class DeviceInputSource: AudioSource {
     private let channelPair: (left: Int, right: Int)
     private var configurationObserver: NSObjectProtocol?
 
-    public var onFailure: ((String) -> Void)?
+    // Ces closures sont lues sur le thread du tap audio et mutées depuis le MainActor :
+    // l'accès passe par un lock pour éviter un load/release non synchronisé (use-after-free).
+    private let callbackLock = NSLock()
+    private var failureHandler: ((String) -> Void)?
+    private var rawBufferHandler: ((AVAudioPCMBuffer) -> Void)?
+
+    public var onFailure: ((String) -> Void)? {
+        get { callbackLock.withLock { failureHandler } }
+        set { callbackLock.withLock { failureHandler = newValue } }
+    }
+
     /// Buffers bruts du tap (tous canaux, format hardware) — consommés par le Recorder.
-    public var onRawBuffer: ((AVAudioPCMBuffer) -> Void)?
+    public var onRawBuffer: ((AVAudioPCMBuffer) -> Void)? {
+        get { callbackLock.withLock { rawBufferHandler } }
+        set { callbackLock.withLock { rawBufferHandler = newValue } }
+    }
     public var displayName: String { device.name }
     /// Format hardware actuel (valide après `start`).
     public private(set) var hardwareFormat: AVAudioFormat?
@@ -41,7 +54,8 @@ public final class DeviceInputSource: AudioSource {
 
         // format: nil = format natif (tous canaux, Float32 désentrelacé) ; le mixdown est fait ici.
         engine.inputNode.installTap(onBus: 0, bufferSize: 4800, format: nil) { [weak self] buffer, _ in
-            self?.onRawBuffer?(buffer)
+            let rawSink = self?.onRawBuffer // snapshot sous lock
+            rawSink?(buffer)
             guard let data = buffer.floatChannelData else { return }
             let frames = Int(buffer.frameLength)
             var mono = [Float](repeating: 0, count: frames)

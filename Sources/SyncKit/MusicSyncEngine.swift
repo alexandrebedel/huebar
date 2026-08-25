@@ -61,6 +61,16 @@ public final class MusicSyncEngine {
             zoneName = zone.metadata.name
             channels = zone.channels.map { SyncChannel(id: $0.channelID, x: $0.position.x) }
 
+            // Une coupure DTLS après le handshake (bridge redémarré, Wi-Fi) doit
+            // remonter à l'UI — sinon l'engine reste « running » avec des lampes figées.
+            transport.onDisconnect = { [weak self] message in
+                Task { @MainActor [weak self] in
+                    guard let self, self.state == .running || self.state == .starting else { return }
+                    await self.teardown()
+                    self.state = .error("Connexion au bridge perdue : \(message)")
+                }
+            }
+
             // REST start puis handshake immédiat (fenêtre de quelques secondes).
             try await entertainment.startEntertainment(id: zone.id)
             do {
@@ -139,6 +149,7 @@ public final class MusicSyncEngine {
         source?.stop()
         source?.onFailure = nil
         source = nil
+        transport.onDisconnect = nil
         transport.close()
         if let configID {
             try? await entertainment.stopEntertainment(id: configID)
