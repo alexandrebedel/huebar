@@ -74,6 +74,18 @@ private func makeReadyState() async -> (HueState, FakeClient) {
 }
 
 @MainActor
+@Test func setRoomBrightnessPropagatesToLightsLocally() async {
+    // Le PUT grouped_light allume et dimme toutes les lampes : l'état local doit suivre
+    // immédiatement (sliders des lampes + moyenne du slider de pièce), sans refresh.
+    let (state, fake) = await makeReadyState()
+    #expect(state.rooms[0].lights[0].on.on == false)
+    await state.setRoomBrightness(id: "R1", 70)
+    #expect(state.rooms[0].lights[0].on.on == true)
+    #expect(state.rooms[0].lights[0].dimming == Dimming(brightness: 70))
+    #expect(fake.lightUpdates.isEmpty) // un seul PUT grouped, pas un par lampe
+}
+
+@MainActor
 @Test func toggleLightUpdatesLightLocally() async {
     let (state, fake) = await makeReadyState()
     await state.toggleLight(roomID: "R1", lightID: "L1")

@@ -87,6 +87,14 @@ public final class HueState {
               let groupedID = rooms[index].groupedLightID else { return }
         rooms[index].brightness = brightness
         rooms[index].isOn = true
+        // Le PUT grouped_light applique on+dimming à TOUTES les lampes : on le reflète
+        // localement pour que les sliders des lampes (et la moyenne) suivent sans refresh.
+        for lightIndex in rooms[index].lights.indices {
+            rooms[index].lights[lightIndex].on = OnState(on: true)
+            if rooms[index].lights[lightIndex].dimming != nil {
+                rooms[index].lights[lightIndex].dimming = Dimming(brightness: brightness)
+            }
+        }
         await perform { client in
             try await client.updateGroupedLight(
                 id: groupedID,

@@ -76,12 +76,12 @@ struct AppWindowView: View {
         } else {
             switch selection ?? .home {
             case .home:
-                HomeDetailView(state: state)
+                HomeDetailView(state: state) { selection = .room($0) }
             case .room(let id):
                 if let room = state.rooms.first(where: { $0.id == id }) {
                     RoomDetailView(state: state, room: room)
                 } else {
-                    HomeDetailView(state: state)
+                    HomeDetailView(state: state) { selection = .room($0) }
                 }
             case .music:
                 if let musicEngine, let recorder {

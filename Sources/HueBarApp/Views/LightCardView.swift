@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 import HueKit
 
-struct LightRowView: View {
+/// Carte de lampe façon app Hue : fond teinté de sa couleur quand allumée,
+/// grise quand éteinte (slider et pipette alors inactifs).
+struct LightCardView: View {
     let state: HueState
     let roomID: String
     let light: Light
@@ -11,8 +13,9 @@ struct LightRowView: View {
     @State private var colorTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
+        let tint = HueCardStyle.tint(for: light)
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Toggle("", isOn: Binding(
                     get: { light.on.on },
                     set: { _ in Task { await state.toggleLight(roomID: roomID, lightID: light.id) } }
@@ -22,7 +25,8 @@ struct LightRowView: View {
                 .labelsHidden()
 
                 Text(light.metadata.name)
-                    .font(.callout)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(tint.foreground)
                     .lineLimit(1)
 
                 Spacer()
@@ -34,6 +38,8 @@ struct LightRowView: View {
                         .onChange(of: color) { _, newValue in
                             scheduleColorSend(newValue)
                         }
+                        .disabled(!tint.isOn)
+                        .opacity(tint.isOn ? 1 : 0.4)
                 }
             }
             if light.dimming != nil {
@@ -42,18 +48,22 @@ struct LightRowView: View {
                         Task { await state.setLightBrightness(roomID: roomID, lightID: light.id, brightness) }
                     }
                 }
-                .controlSize(.mini)
-                .disabled(!light.on.on)
-                .opacity(light.on.on ? 1 : 0.35)
+                .controlSize(.small)
+                .tint(tint.foreground.opacity(0.85))
+                .disabled(!tint.isOn)
+                .opacity(tint.isOn ? 1 : 0.35)
             }
         }
-        .padding(.leading, 4)
+        .hueCard(colors: tint.colors)
         .onAppear {
             brightness = light.dimming?.brightness ?? 100
             if let xy = light.color?.xy {
                 let rgb = HueColor.rgb(from: xy)
                 color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
             }
+        }
+        .onChange(of: light.dimming) { _, newValue in
+            if let newValue { brightness = newValue.brightness }
         }
     }
 
