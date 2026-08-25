@@ -50,7 +50,26 @@ private func whiteLight(id: String = "L3", device: String = "D3") -> Light {
     #expect(createdScene.metadata.image == nil)
 }
 
-@Test func lightUpdateEncodesTemperatureAndEffect() throws {
+@Test func sceneStatusDecodesAndDrivesIsActive() throws {
+    let json = """
+    {"id":"S1","metadata":{"name":"Repos"},"group":{"rid":"R1","rtype":"room"},
+     "status":{"active":"static"}}
+    """
+    let scene = try JSONDecoder().decode(HueScene.self, from: Data(json.utf8))
+    #expect(scene.isActive)
+    #expect(HueScene(id: "S2", metadata: Metadata(name: "X"), group: ResourceRef(rid: "R1", rtype: "room")).isActive == false)
+}
+
+@MainActor
+@Test func refreshCarriesSceneStatusFromBridge() async {
+    let (state, fake) = await makeGalleryState()
+    #expect(state.rooms[0].scenes[0].isActive == false)
+    fake.scenes = [HueScene(
+        id: "SC1", metadata: Metadata(name: "Savane"),
+        group: ref("R1", "room"), status: SceneStatus(active: "static"))]
+    await state.refresh()
+    #expect(state.rooms[0].scenes[0].isActive)
+}
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
 

@@ -41,7 +41,19 @@ struct SceneCardView: View {
             }
             .frame(height: 84)
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(
+                .white.opacity(scene.isActive ? 0.9 : 0.12),
+                lineWidth: scene.isActive ? 2 : 1))
+            .overlay(alignment: .topLeading) {
+                if scene.isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .shadow(radius: 2)
+                        .padding(6)
+                        .help("Scène active")
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 // Les scènes officielles ont une image publique ; sans elle, la scène
                 // a été créée par API — donc par HueBar.

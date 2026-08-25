@@ -115,10 +115,28 @@ public final class HueState {
     }
 
     public func recallScene(id: String) async {
+        markSceneActive(id: id) // le highlight suit le clic, le refresh confirmera
         await perform { client in
             try await client.recallScene(id: id)
         }
         await refresh() // une scène change lampes et couleurs : on resynchronise tout
+    }
+
+    /// La scène rappelée devient active, les autres scènes du même groupe inactives.
+    private func markSceneActive(id: String) {
+        for roomIndex in rooms.indices where rooms[roomIndex].scenes.contains(where: { $0.id == id }) {
+            for sceneIndex in rooms[roomIndex].scenes.indices {
+                rooms[roomIndex].scenes[sceneIndex].status = SceneStatus(
+                    active: rooms[roomIndex].scenes[sceneIndex].id == id ? "static" : "inactive")
+            }
+        }
+        if var zone = all, zone.scenes.contains(where: { $0.id == id }) {
+            for index in zone.scenes.indices {
+                zone.scenes[index].status = SceneStatus(
+                    active: zone.scenes[index].id == id ? "static" : "inactive")
+            }
+            all = zone
+        }
     }
 
     public func toggleLight(roomID: String, lightID: String) async {

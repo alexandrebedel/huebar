@@ -155,11 +155,22 @@ public struct SceneAction: Codable, Sendable, Equatable {
     }
 }
 
+/// Activation d'une scène : "inactive", "static" ou "dynamic_palette".
+public struct SceneStatus: Codable, Sendable, Equatable {
+    public var active: String?
+    public init(active: String?) { self.active = active }
+}
+
 public struct HueScene: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var metadata: Metadata
     public var group: ResourceRef
     public var actions: [SceneAction]?
+    public var status: SceneStatus?
+
+    public var isActive: Bool {
+        if let active = status?.active { active != "inactive" } else { false }
+    }
 }
 
 public struct GroupedLight: Codable, Identifiable, Sendable, Equatable {
