@@ -12,6 +12,8 @@ struct MusicSectionView: View {
     @AppStorage("musicSourceUID") private var sourceUID = "system"
     @AppStorage("musicPairIndex") private var pairIndex = 0
     @AppStorage("musicMutedRooms") private var mutedRoomsStorage = ""
+    @AppStorage("musicMode") private var modeStorage = SyncMode.club.rawValue
+    @AppStorage("musicTheme") private var themeStorage = SyncTheme.spectre.rawValue
     @State private var devices: [AudioInputDevice] = []
     @State private var activeSyncSource: DeviceInputSource?
     @State private var zone: EntertainmentConfig?
@@ -40,6 +42,17 @@ struct MusicSectionView: View {
                 ForEach(SyncMode.allCases) { mode in
                     MusicModeCard(mode: mode, isSelected: engine.mode == mode) {
                         engine.mode = mode
+                        modeStorage = mode.rawValue
+                    }
+                }
+            }
+
+            // Thèmes : la palette de couleurs imposée au mapper, quel que soit le mode.
+            HStack(spacing: 8) {
+                ForEach(SyncTheme.allCases) { theme in
+                    ThemeChip(theme: theme, isSelected: engine.theme == theme) {
+                        engine.theme = theme
+                        themeStorage = theme.rawValue
                     }
                 }
             }
@@ -118,6 +131,8 @@ struct MusicSectionView: View {
         }
         .onAppear {
             devices = AudioDeviceCatalog.inputDevices()
+            engine.mode = SyncMode(rawValue: modeStorage) ?? .club
+            engine.theme = SyncTheme(rawValue: themeStorage) ?? .spectre
         }
         .task { await loadZoneMap() }
         .onChange(of: state.rooms) { _, _ in rebuildEntries() }
@@ -280,6 +295,38 @@ struct MusicSectionView: View {
     private static func durationLabel(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
+    }
+}
+
+/// Pastille de thème : la palette de couleurs de la sync.
+private struct ThemeChip: View {
+    let theme: SyncTheme
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var colors: [Color] {
+        guard let anchors = theme.hueAnchors else {
+            return [0.0, 0.17, 0.33, 0.5, 0.67, 0.83].map {
+                Color(hue: $0, saturation: 0.85, brightness: 1)
+            }
+        }
+        return anchors.map { Color(hue: $0, saturation: 0.85, brightness: 1) }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(AngularGradient(colors: colors + [colors[0]], center: .center))
+                    .frame(width: 16, height: 16)
+                Text(theme.label).font(.caption)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(.quaternary, in: Capsule())
+            .overlay(Capsule().strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
     }
 }
 

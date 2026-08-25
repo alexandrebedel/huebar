@@ -13,7 +13,7 @@ final class PanelWindowController {
     init(rootView: some View) {
         window = PanelWindow(
             contentRect: NSRect(origin: .zero, size: Self.defaultSize),
-            styleMask: [.titled, .fullSizeContentView],
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -25,7 +25,9 @@ final class PanelWindowController {
         // active (les popups TCC volent le focus et la renvoyaient à l'arrière-plan).
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+        // Le bouton rouge reste visible (fermer la fenêtre = la masquer) ;
+        // réduire/agrandir n'ont pas de sens pour ce panneau.
+        for button: NSWindow.ButtonType in [.miniaturizeButton, .zoomButton] {
             window.standardWindowButton(button)?.isHidden = true
         }
         window.contentViewController = NSHostingController(rootView: rootView)
@@ -70,14 +72,20 @@ private final class PanelWindow: NSWindow {
 }
 
 enum PanelGeometry {
-    /// Centrée horizontalement, centre vertical légèrement au-dessus du milieu,
-    /// clampée à 80 % de la hauteur (et 90 % de la largeur) visibles de l'écran.
+    /// Part de l'écran visible que la fenêtre peut occuper au maximum.
+    static let maxHeightFraction = 0.8
+    static let maxWidthFraction = 0.9
+    /// Position verticale du bas de la fenêtre dans l'espace restant :
+    /// 0.5 = centre exact, plus haut = fenêtre légèrement au-dessus du milieu.
+    static let verticalBias = 0.55
+
+    /// Centrée horizontalement, légèrement au-dessus du centre vertical.
     static func frame(size: NSSize, screenVisibleFrame screen: NSRect) -> NSRect {
-        let height = min(size.height, screen.height * 0.8)
-        let width = min(size.width, screen.width * 0.9)
+        let height = min(size.height, screen.height * maxHeightFraction)
+        let width = min(size.width, screen.width * maxWidthFraction)
         return NSRect(
             x: screen.midX - width / 2,
-            y: screen.minY + (screen.height - height) * 0.55,
+            y: screen.minY + (screen.height - height) * verticalBias,
             width: width,
             height: height
         )

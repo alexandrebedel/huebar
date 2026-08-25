@@ -95,6 +95,24 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     }
 }
 
+@Test func sunsetThemeStaysWarm() {
+    // Le thème contraint les teintes : en Sunset, le rouge doit dominer le bleu
+    // en moyenne, malgré la rotation de teinte et les beats.
+    var mapper = LightMapper(mode: .club, theme: .sunset)
+    var totalRed = 0.0
+    var totalBlue = 0.0
+    var time = 0.0
+    for i in 0..<300 {
+        time += 0.02
+        let colors = mapper.map(frame: frame(beat: i % 10 == 0), channels: channels, time: time)
+        for color in colors {
+            totalRed += color.red
+            totalBlue += color.blue
+        }
+    }
+    #expect(totalRed > totalBlue * 1.3)
+}
+
 @Test func silenceIsDimInBothModes() {
     for mode in SyncMode.allCases {
         var mapper = LightMapper(mode: mode)

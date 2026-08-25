@@ -8,7 +8,6 @@ struct LightCardView: View {
     let state: HueState
     let roomID: String
     let light: Light
-    @State private var brightness: Double = 100
     @State private var color: Color = .white
     @State private var colorTask: Task<Void, Never>?
 
@@ -43,10 +42,8 @@ struct LightCardView: View {
                 }
             }
             if light.dimming != nil {
-                Slider(value: $brightness, in: 1...100) { editing in
-                    if !editing {
-                        Task { await state.setLightBrightness(roomID: roomID, lightID: light.id, brightness) }
-                    }
+                TweenedSlider(target: light.dimming?.brightness ?? 100, range: 1...100) { value in
+                    Task { await state.setLightBrightness(roomID: roomID, lightID: light.id, value) }
                 }
                 .controlSize(.small)
                 .tint(tint.foreground.opacity(0.85))
@@ -56,14 +53,10 @@ struct LightCardView: View {
         }
         .hueCard(colors: tint.colors)
         .onAppear {
-            brightness = light.dimming?.brightness ?? 100
             if let xy = light.color?.xy {
                 let rgb = HueColor.rgb(from: xy)
                 color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
             }
-        }
-        .onChange(of: light.dimming) { _, newValue in
-            if let newValue { brightness = newValue.brightness }
         }
     }
 

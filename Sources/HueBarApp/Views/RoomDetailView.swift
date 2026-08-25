@@ -4,7 +4,6 @@ import HueKit
 struct RoomDetailView: View {
     let state: HueState
     let room: RoomModel
-    @State private var brightness: Double = 100
 
     var body: some View {
         ScrollView {
@@ -24,8 +23,6 @@ struct RoomDetailView: View {
             }
             .padding(20)
         }
-        .onAppear { brightness = HueCardStyle.averageBrightness(room) }
-        .onChange(of: room) { _, newValue in brightness = HueCardStyle.averageBrightness(newValue) }
     }
 
     /// Header façon app Hue : grande carte teintée de la couleur réelle de la pièce,
@@ -45,10 +42,8 @@ struct RoomDetailView: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
             }
-            Slider(value: $brightness, in: 1...100) { editing in
-                if !editing {
-                    Task { await state.setRoomBrightness(id: room.id, brightness) }
-                }
+            TweenedSlider(target: HueCardStyle.averageBrightness(room), range: 1...100) { value in
+                Task { await state.setRoomBrightness(id: room.id, value) }
             }
             .tint(tint.foreground.opacity(0.85))
             .disabled(room.groupedLightID == nil || !tint.isOn)
@@ -103,7 +98,6 @@ private struct RoomCardView: View {
     let state: HueState
     let room: RoomModel
     var onOpen: () -> Void
-    @State private var brightness: Double = 100
 
     var body: some View {
         let tint = HueCardStyle.tint(for: room)
@@ -121,10 +115,8 @@ private struct RoomCardView: View {
                 .controlSize(.small)
                 .labelsHidden()
             }
-            Slider(value: $brightness, in: 1...100) { editing in
-                if !editing {
-                    Task { await state.setRoomBrightness(id: room.id, brightness) }
-                }
+            TweenedSlider(target: HueCardStyle.averageBrightness(room), range: 1...100) { value in
+                Task { await state.setRoomBrightness(id: room.id, value) }
             }
             .controlSize(.small)
             .tint(tint.foreground.opacity(0.85))
@@ -134,7 +126,5 @@ private struct RoomCardView: View {
         .hueCard(colors: tint.colors)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { onOpen() }
-        .onAppear { brightness = HueCardStyle.averageBrightness(room) }
-        .onChange(of: room) { _, newValue in brightness = HueCardStyle.averageBrightness(newValue) }
     }
 }
