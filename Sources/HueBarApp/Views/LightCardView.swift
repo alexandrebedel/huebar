@@ -10,6 +10,8 @@ struct LightCardView: View {
     let light: Light
     @State private var color: Color = .white
     @State private var colorTask: Task<Void, Never>?
+    @State private var renaming = false
+    @State private var newName = ""
 
     var body: some View {
         let tint = HueCardStyle.tint(for: light)
@@ -93,6 +95,15 @@ struct LightCardView: View {
             }
         }
         .hueCard(colors: tint.colors)
+        .contextMenu {
+            Button("Renommer la lampe…") {
+                newName = light.metadata.name
+                renaming = true
+            }
+        }
+        .renameAlert("Renommer la lampe", isPresented: $renaming, name: $newName) { name in
+            Task { await state.renameLight(roomID: roomID, lightID: light.id, name: name) }
+        }
         .onAppear {
             if let xy = light.color?.xy {
                 let rgb = HueColor.rgb(from: xy)

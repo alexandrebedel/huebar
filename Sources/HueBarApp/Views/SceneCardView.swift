@@ -22,6 +22,8 @@ struct SceneCardView: View {
     let scene: HueScene
     let state: HueState
     @State private var hovering = false
+    @State private var renaming = false
+    @State private var newName = ""
 
     var body: some View {
         Button {
@@ -73,9 +75,16 @@ struct SceneCardView: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .contextMenu {
+            Button("Renommer la scène…") {
+                newName = scene.metadata.name
+                renaming = true
+            }
             Button("Supprimer la scène", role: .destructive) {
                 Task { await state.deleteScene(id: scene.id) }
             }
+        }
+        .renameAlert("Renommer la scène", isPresented: $renaming, name: $newName) { name in
+            Task { await state.renameScene(id: scene.id, name: name) }
         }
     }
 

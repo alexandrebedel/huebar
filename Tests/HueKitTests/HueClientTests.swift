@@ -54,6 +54,31 @@ struct HueClientTests {
         try await makeClient().recallScene(id: "S1")
     }
 
+    @Test func renameLightPutsMetadataName() async throws {
+        MockURLProtocol.handler = { request in
+            #expect(request.url?.absoluteString == "https://192.168.1.134/clip/v2/resource/light/L1")
+            #expect(request.httpMethod == "PUT")
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8)
+            #expect(body == #"{"metadata":{"name":"Bureau"}}"#)
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().renameLight(id: "L1", name: "Bureau")
+    }
+
+    @Test func renameRoomAndSceneTargetTheirResource() async throws {
+        MockURLProtocol.handler = { request in
+            #expect(request.url?.absoluteString == "https://192.168.1.134/clip/v2/resource/room/R1")
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().renameRoom(id: "R1", name: "Salon")
+
+        MockURLProtocol.handler = { request in
+            #expect(request.url?.absoluteString == "https://192.168.1.134/clip/v2/resource/scene/S1")
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().renameScene(id: "S1", name: "Soirée")
+    }
+
     @Test func non200ThrowsBadStatus() async {
         MockURLProtocol.handler = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!,

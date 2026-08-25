@@ -157,6 +157,23 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
 }
 
 @MainActor
+@Test func renamesAreOptimisticAndReachTheBridge() async {
+    let (state, fake) = await makeGalleryState()
+
+    await state.renameLight(roomID: "R1", lightID: "L1", name: "Bureau")
+    #expect(state.rooms[0].lights[0].metadata.name == "Bureau")
+
+    await state.renameRoom(id: "R1", name: "Salon")
+    #expect(state.rooms[0].name == "Salon")
+
+    await state.renameScene(id: "SC1", name: "Soirée")
+    #expect(state.rooms[0].scenes[0].metadata.name == "Soirée")
+
+    #expect(fake.renames.map(\.resource) == ["light", "room", "scene"])
+    #expect(fake.renames.map(\.name) == ["Bureau", "Salon", "Soirée"])
+}
+
+@MainActor
 @Test func setLightTemperatureIsOptimisticAndSendsMirek() async {
     let (state, fake) = await makeGalleryState()
     await state.setLightTemperature(roomID: "R1", lightID: "L3", mirek: 250)

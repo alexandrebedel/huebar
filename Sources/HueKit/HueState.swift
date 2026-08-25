@@ -3,7 +3,7 @@ import Observation
 
 public struct RoomModel: Identifiable, Sendable, Equatable {
     public let id: String
-    public let name: String
+    public var name: String
     public let groupedLightID: String?
     public var isOn: Bool
     public var brightness: Double
@@ -249,6 +249,39 @@ public final class HueState {
             try await client.createScene(name: scenario.name, groupID: roomID, actions: actions)
         }
         await refresh() // la nouvelle scène doit apparaître dans la grille
+    }
+
+    // MARK: - Renommage (optimiste, comme le reste)
+
+    public func renameLight(roomID: String, lightID: String, name: String) async {
+        guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
+        rooms[roomIndex].lights[lightIndex].metadata.name = name
+        await perform { client in
+            try await client.renameLight(id: lightID, name: name)
+        }
+    }
+
+    public func renameRoom(id: String, name: String) async {
+        guard let index = rooms.firstIndex(where: { $0.id == id }) else { return }
+        rooms[index].name = name
+        await perform { client in
+            try await client.renameRoom(id: id, name: name)
+        }
+    }
+
+    public func renameScene(id: String, name: String) async {
+        for roomIndex in rooms.indices {
+            if let sceneIndex = rooms[roomIndex].scenes.firstIndex(where: { $0.id == id }) {
+                rooms[roomIndex].scenes[sceneIndex].metadata.name = name
+            }
+        }
+        if var zone = all, let sceneIndex = zone.scenes.firstIndex(where: { $0.id == id }) {
+            zone.scenes[sceneIndex].metadata.name = name
+            all = zone
+        }
+        await perform { client in
+            try await client.renameScene(id: id, name: name)
+        }
     }
 
     // MARK: - Helpers

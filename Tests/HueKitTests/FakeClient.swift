@@ -21,6 +21,7 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     private(set) var recalledScenes: [String] = []
     private(set) var createdScenes: [(name: String, groupID: String, actions: [SceneAction])] = []
     private(set) var deletedScenes: [String] = []
+    private(set) var renames: [(resource: String, id: String, name: String)] = []
 
     private func failIfNeeded() throws {
         if shouldFail { throw HueError.invalidResponse }
@@ -60,5 +61,20 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     func recallScene(id: String) async throws {
         try failIfNeeded()
         recalledScenes.append(id)
+    }
+
+    func renameLight(id: String, name: String) async throws {
+        try failIfNeeded()
+        renames.append(("light", id, name))
+    }
+
+    func renameRoom(id: String, name: String) async throws {
+        try failIfNeeded()
+        renames.append(("room", id, name))
+    }
+
+    func renameScene(id: String, name: String) async throws {
+        try failIfNeeded()
+        renames.append(("scene", id, name))
     }
 }

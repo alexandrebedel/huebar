@@ -5,6 +5,8 @@ struct RoomDetailView: View {
     let state: HueState
     let room: RoomModel
     @State private var showGallery = false
+    @State private var renaming = false
+    @State private var newName = ""
 
     var body: some View {
         ScrollView {
@@ -64,6 +66,15 @@ struct RoomDetailView: View {
             .opacity(tint.isOn ? 1 : 0.35)
         }
         .hueCard(colors: tint.colors)
+        .contextMenu {
+            Button("Renommer la pièce…") {
+                newName = room.name
+                renaming = true
+            }
+        }
+        .renameAlert("Renommer la pièce", isPresented: $renaming, name: $newName) { name in
+            Task { await state.renameRoom(id: room.id, name: name) }
+        }
     }
 }
 
@@ -112,6 +123,8 @@ private struct RoomCardView: View {
     let state: HueState
     let room: RoomModel
     var onOpen: () -> Void
+    @State private var renaming = false
+    @State private var newName = ""
 
     var body: some View {
         let tint = HueCardStyle.tint(for: room)
@@ -140,5 +153,14 @@ private struct RoomCardView: View {
         .hueCard(colors: tint.colors)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { onOpen() }
+        .contextMenu {
+            Button("Renommer la pièce…") {
+                newName = room.name
+                renaming = true
+            }
+        }
+        .renameAlert("Renommer la pièce", isPresented: $renaming, name: $newName) { name in
+            Task { await state.renameRoom(id: room.id, name: name) }
+        }
     }
 }

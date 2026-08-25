@@ -10,4 +10,7 @@ public protocol HueControlling: Sendable {
     func recallScene(id: String) async throws
     func createScene(name: String, groupID: String, actions: [SceneAction]) async throws
     func deleteScene(id: String) async throws
+    func renameLight(id: String, name: String) async throws
+    func renameRoom(id: String, name: String) async throws
+    func renameScene(id: String, name: String) async throws
 }

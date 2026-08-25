@@ -59,6 +59,25 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
         _ = try await send("DELETE", "/clip/v2/resource/scene/\(id)", body: nil)
     }
 
+    public func renameLight(id: String, name: String) async throws {
+        try await rename("light", id: id, name: name)
+    }
+
+    public func renameRoom(id: String, name: String) async throws {
+        try await rename("room", id: id, name: name)
+    }
+
+    public func renameScene(id: String, name: String) async throws {
+        try await rename("scene", id: id, name: name)
+    }
+
+    private func rename(_ resource: String, id: String, name: String) async throws {
+        struct MetadataBody: Encodable { let name: String }
+        struct Body: Encodable { let metadata: MetadataBody }
+        _ = try await send("PUT", "/clip/v2/resource/\(resource)/\(id)",
+                           body: try encode(Body(metadata: MetadataBody(name: name))))
+    }
+
     public func createScene(name: String, groupID: String, actions: [SceneAction]) async throws {
         struct Body: Encodable {
             let type = "scene"
