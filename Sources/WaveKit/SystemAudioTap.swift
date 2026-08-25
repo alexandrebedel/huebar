@@ -7,12 +7,25 @@ import Foundation
 /// Un refus ne produit AUCUNE erreur : les buffers arrivent silencieux.
 public final class SystemAudioTap: AudioSource {
     public var displayName: String { "Audio du Mac" }
-    public var onFailure: ((String) -> Void)?
+
+    // Lu depuis la queue CoreAudio, muté depuis le MainActor : accès sous lock.
+    private let callbackLock = NSLock()
+    private var failureHandler: ((String) -> Void)?
+    public var onFailure: ((String) -> Void)? {
+        get { callbackLock.withLock { failureHandler } }
+        set { callbackLock.withLock { failureHandler = newValue } }
+    }
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
+    private var outputChangeListener: AudioObjectPropertyListenerBlock?
     private let queue = DispatchQueue(label: "huebar.systemtap")
+
+    private static var defaultOutputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
 
     public init() {}
 
@@ -61,34 +74,25 @@ public final class SystemAudioTap: AudioSource {
 
         status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, inputData, _, _, _ in
             let allBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
-            // Si la sortie par défaut est un périphérique duplex (interface USB, AirPods…),
-            // ses propres canaux d'ENTRÉE arrivent aussi dans l'aggregate et pollueraient le
-            // mix : quand un buffer stéréo (le format du tap) est présent, on ignore le reste.
-            let stereoOnly = allBuffers.filter { $0.mNumberChannels == 2 }
-            let buffers = stereoOnly.isEmpty ? Array(allBuffers) : stereoOnly
-            var mono: [Float] = []
-            for buffer in buffers where buffer.mData != nil {
-                let channelCount = max(1, Int(buffer.mNumberChannels))
-                let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                let frames = sampleCount / channelCount
-                guard frames > 0 else { continue }
-                let data = buffer.mData!.assumingMemoryBound(to: Float.self)
-                if mono.isEmpty { mono = [Float](repeating: 0, count: frames) }
-                let limit = min(frames, mono.count)
-                if channelCount == 1 {
-                    for i in 0..<limit { mono[i] += data[i] }
-                } else {
-                    for i in 0..<limit {
-                        var sum: Float = 0
-                        for c in 0..<channelCount { sum += data[i * channelCount + c] }
-                        mono[i] += sum / Float(channelCount)
-                    }
+            // Une sortie par défaut duplex (interface USB, micro intégré d'un dock…) injecte
+            // ses propres flux d'ENTRÉE dans l'aggregate, AVANT les flux du tap. On ne mixe
+            // donc que le buffer du tap : le DERNIER buffer stéréo (format du tap) de la liste.
+            let tapBuffer = allBuffers.last(where: { $0.mNumberChannels == 2 && $0.mData != nil })
+                ?? allBuffers.last(where: { $0.mData != nil })
+            guard let buffer = tapBuffer, let rawData = buffer.mData else { return }
+            let channelCount = max(1, Int(buffer.mNumberChannels))
+            let frames = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size / channelCount
+            guard frames > 0 else { return }
+            let data = rawData.assumingMemoryBound(to: Float.self)
+            var mono = [Float](repeating: 0, count: frames)
+            if channelCount == 1 {
+                for i in 0..<frames { mono[i] = data[i] }
+            } else {
+                for i in 0..<frames {
+                    var sum: Float = 0
+                    for c in 0..<channelCount { sum += data[i * channelCount + c] }
+                    mono[i] = sum / Float(channelCount)
                 }
-            }
-            guard !mono.isEmpty else { return }
-            if buffers.count > 1 {
-                let scale = 1 / Float(buffers.count)
-                for i in mono.indices { mono[i] *= scale }
             }
             onSamples(mono, sampleRate)
         }
@@ -102,6 +106,16 @@ public final class SystemAudioTap: AudioSource {
             cleanup()
             throw AudioSourceError.osStatus(status, "démarrage du tap")
         }
+
+        // L'aggregate reste figé sur la sortie capturée au start : si l'utilisateur change
+        // de sortie (AirPods, HDMI…), la capture gèlerait en silence. On remonte une erreur.
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.onFailure?("Sortie audio par défaut modifiée — relancez la sync")
+        }
+        if AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &Self.defaultOutputAddress, queue, listener) == noErr {
+            outputChangeListener = listener
+        }
     }
 
     public func stop() {
@@ -109,6 +123,11 @@ public final class SystemAudioTap: AudioSource {
     }
 
     private func cleanup() {
+        if let outputChangeListener {
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject), &Self.defaultOutputAddress, queue, outputChangeListener)
+            self.outputChangeListener = nil
+        }
         if aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let procID {
                 AudioDeviceStop(aggregateID, procID)

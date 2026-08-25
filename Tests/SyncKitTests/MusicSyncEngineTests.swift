@@ -18,8 +18,12 @@ private final class FakeEntertainment: EntertainmentControlling, @unchecked Send
     private(set) var started: [String] = []
     private(set) var stopped: [String] = []
     private(set) var applicationIDFetches = 0
+    var failFetches = false
 
-    func fetchEntertainmentConfigurations() async throws -> [EntertainmentConfig] { configs }
+    func fetchEntertainmentConfigurations() async throws -> [EntertainmentConfig] {
+        if failFetches { throw HueError.invalidResponse }
+        return configs
+    }
     func startEntertainment(id: String) async throws { started.append(id) }
     func stopEntertainment(id: String) async throws { stopped.append(id) }
     func fetchApplicationID() async throws -> String {
@@ -152,6 +156,25 @@ private func makeEngine(clientKey: String? = "05C37B87131DA78EA028CE0429AE3F94")
     #expect(transport.closed)
     #expect(source.stopCount == 1)
     #expect(entertainment.stopped.count == 1)
+}
+
+@MainActor
+@Test func teardownFiresHookAndClearsZoneState() async {
+    let (engine, entertainment, _) = makeEngine()
+    var hookCalls = 0
+    engine.onDidTeardown = { hookCalls += 1 }
+    await engine.start(source: FakeSource())
+    await engine.stop()
+    #expect(hookCalls == 1)
+    #expect(engine.zoneName == nil)
+
+    // Un nouveau start qui échoue AVANT la redécouverte de zone ne doit pas
+    // envoyer de stop parasite sur l'ancienne zone.
+    let stopsBefore = entertainment.stopped.count
+    entertainment.failFetches = true
+    await engine.start(source: FakeSource())
+    #expect(entertainment.stopped.count == stopsBefore)
+    #expect(hookCalls == 2) // le teardown du chemin d'erreur a bien tourné
 }
 
 @MainActor

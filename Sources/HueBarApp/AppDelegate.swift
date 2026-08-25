@@ -17,7 +17,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let config = try HueConfig.load()
             let client = HueClient(config: config)
             state = HueState(client: client)
-            musicEngine = MusicSyncEngine(config: config, entertainment: client, transport: DTLSStreamer())
+            let engine = MusicSyncEngine(config: config, entertainment: client, transport: DTLSStreamer())
+            // Couplage hors de la vue : un REC accroché à la source de la sync doit être
+            // finalisé quand la sync tombe, même popover fermé (la vue ne reçoit alors
+            // aucun update SwiftUI).
+            engine.onDidTeardown = { [recorderController] in
+                if recorderController.isSharingExternalSource {
+                    recorderController.stop()
+                }
+            }
+            musicEngine = engine
         } catch {
             state = HueState(
                 client: nil,

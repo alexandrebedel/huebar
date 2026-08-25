@@ -21,6 +21,9 @@ public final class MusicSyncEngine {
     public private(set) var state: State = .idle
     public private(set) var level: Double = 0
     public private(set) var zoneName: String?
+    /// Appelé à chaque teardown (stop manuel, erreur, déconnexion) — y compris quand
+    /// aucune vue n'est à l'écran. Les consommateurs de la source (Recorder) s'y accrochent.
+    public var onDidTeardown: (() -> Void)?
     public var mode: SyncMode = .club {
         didSet { if mode != oldValue { mapper = LightMapper(mode: mode) } }
     }
@@ -154,8 +157,14 @@ public final class MusicSyncEngine {
         if let configID {
             try? await entertainment.stopEntertainment(id: configID)
         }
+        // Sans ça, un start ultérieur qui échoue avant la redécouverte de zone enverrait
+        // un stop parasite sur l'ancienne zone (et couperait un autre streamer, ex. l'app Hue).
+        configID = nil
+        channels = []
+        zoneName = nil
         level = 0
         latestFrame.withLock { $0 = .silence }
+        onDidTeardown?()
     }
 
     private static func describe(_ error: Error) -> String {
