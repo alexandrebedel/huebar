@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeys = HotKeyCenter()
     private var state: HueState!
     private var musicEngine: MusicSyncEngine?
+    private var entertainmentClient: (any EntertainmentControlling)?
     private let recorderController = RecorderController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let config = try HueConfig.load()
             let client = HueClient(config: config)
             state = HueState(client: client)
+            entertainmentClient = client
             let engine = MusicSyncEngine(config: config, entertainment: client, transport: DTLSStreamer())
             // Couplage hors de la vue : un REC accroché à la source de la sync doit être
             // finalisé quand la sync tombe, même fenêtre fermée (la vue ne reçoit alors
@@ -35,7 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         panel = PanelWindowController(
-            rootView: AppWindowView(state: state, musicEngine: musicEngine, recorder: recorderController))
+            rootView: AppWindowView(
+                state: state, musicEngine: musicEngine,
+                recorder: recorderController, entertainment: entertainmentClient))
         panel.onShow = { [state] in Task { await state?.refresh() } }
         PanelOpener.open = { [weak self] in self?.panel.show() }
 

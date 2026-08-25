@@ -7,10 +7,16 @@ import WaveKit
 struct MusicSectionView: View {
     let engine: MusicSyncEngine
     let recorder: RecorderController
+    let state: HueState
+    var entertainment: (any EntertainmentControlling)?
     @AppStorage("musicSourceUID") private var sourceUID = "system"
     @AppStorage("musicPairIndex") private var pairIndex = 0
+    @AppStorage("musicMutedRooms") private var mutedRoomsStorage = ""
     @State private var devices: [AudioInputDevice] = []
     @State private var activeSyncSource: DeviceInputSource?
+    @State private var zone: EntertainmentConfig?
+    @State private var services: [EntertainmentService] = []
+    @State private var zoneEntries: [ChannelRoomEntry] = []
 
     private var selectedDevice: AudioInputDevice? {
         devices.first { $0.uid == sourceUID }
@@ -27,14 +33,15 @@ struct MusicSectionView: View {
                     .font(.headline)
                     .labelStyle(.titleAndIcon)
                 Spacer()
-                Picker("", selection: Bindable(engine).mode) {
-                    ForEach(SyncMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+            }
+
+            // Scènes musique : les modes du mapper présentés comme des cartes.
+            HStack(spacing: 10) {
+                ForEach(SyncMode.allCases) { mode in
+                    MusicModeCard(mode: mode, isSelected: engine.mode == mode) {
+                        engine.mode = mode
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 130)
-                .labelsHidden()
             }
 
             HStack(spacing: 8) {
@@ -71,6 +78,22 @@ struct MusicSectionView: View {
                 .disabled(isRunning)
             }
 
+            if !syncRooms.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Pièces synchronisées").font(.subheadline.weight(.semibold))
+                    ForEach(syncRooms) { room in
+                        Toggle(room.name, isOn: Binding(
+                            get: { !mutedRoomIDs.contains(room.id) },
+                            set: { setRoomMuted(room.id, muted: !$0) }
+                        ))
+                        .font(.callout)
+                    }
+                    Text("Une pièce décochée garde son éclairage actuel pendant la sync.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if isRunning {
                 ProgressView(value: engine.level)
                     .tint(engine.level > 0.02 ? .green : .orange)
@@ -96,6 +119,8 @@ struct MusicSectionView: View {
         .onAppear {
             devices = AudioDeviceCatalog.inputDevices()
         }
+        .task { await loadZoneMap() }
+        .onChange(of: state.rooms) { _, _ in rebuildEntries() }
         .onChange(of: engine.state) { _, newState in
             // Toute sortie de .running tue la source de la sync : un enregistrement qui la
             // partageait doit être finalisé (un REC standalone, lui, survit).
@@ -162,7 +187,67 @@ struct MusicSectionView: View {
             return
         }
         guard let source = makeSource() else { return }
+        applyRoomFilter() // fige les couleurs ACTUELLES des pièces exclues
         await engine.start(source: source)
+    }
+
+    // MARK: - Filtre par pièces
+
+    private var mutedRoomIDs: Set<String> {
+        Set(mutedRoomsStorage.split(separator: ",").map(String.init))
+    }
+
+    private var syncRooms: [RoomModel] {
+        let roomIDs = Set(zoneEntries.map(\.roomID))
+        return state.rooms.filter { roomIDs.contains($0.id) }
+    }
+
+    private func setRoomMuted(_ roomID: String, muted: Bool) {
+        var ids = mutedRoomIDs
+        if muted { ids.insert(roomID) } else { ids.remove(roomID) }
+        mutedRoomsStorage = ids.sorted().joined(separator: ",")
+        applyRoomFilter()
+    }
+
+    private func loadZoneMap() async {
+        guard let entertainment,
+              let configs = try? await entertainment.fetchEntertainmentConfigurations(),
+              let zone = MusicSyncEngine.pickZone(configs),
+              let services = try? await entertainment.fetchEntertainmentServices() else { return }
+        self.zone = zone
+        self.services = services
+        rebuildEntries()
+    }
+
+    private func rebuildEntries() {
+        guard let zone else { return }
+        let rooms = state.rooms.map { (id: $0.id, deviceIDs: Set($0.lights.map(\.owner.rid))) }
+        zoneEntries = SyncRoomMap.entries(config: zone, services: services, rooms: rooms)
+        applyRoomFilter()
+    }
+
+    private func applyRoomFilter() {
+        var held: [UInt8: ChannelColor] = [:]
+        let muted = mutedRoomIDs
+        for entry in zoneEntries where muted.contains(entry.roomID) {
+            held[entry.channel] = holdColor(for: entry)
+        }
+        engine.heldChannels = held
+    }
+
+    /// Couleur actuelle de la lampe du channel (noir si éteinte) — envoyée telle quelle
+    /// pendant la sync pour que la pièce exclue garde son éclairage.
+    private func holdColor(for entry: ChannelRoomEntry) -> ChannelColor {
+        let light = state.rooms.first { $0.id == entry.roomID }?
+            .lights.first { $0.owner.rid == entry.deviceID }
+        guard let light, light.on.on else {
+            return ChannelColor(channel: entry.channel, red: 0, green: 0, blue: 0)
+        }
+        let rgb = light.color.map { HueColor.rgb(from: $0.xy) } ?? (red: 1.0, green: 0.84, blue: 0.62)
+        let value = (light.dimming?.brightness ?? 100) / 100
+        return ChannelColor(
+            channel: entry.channel,
+            red: rgb.red * value, green: rgb.green * value, blue: rgb.blue * value)
     }
 
     private func toggleRecord() {
@@ -195,5 +280,41 @@ struct MusicSectionView: View {
     private static func durationLabel(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
+    }
+}
+
+/// Carte de « scène musique » : un mode du mapper, présenté comme une scène.
+private struct MusicModeCard: View {
+    let mode: SyncMode
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var colors: [Color] {
+        switch mode {
+        case .club: [Color(red: 0.55, green: 0.15, blue: 0.95), Color(red: 0.95, green: 0.20, blue: 0.55)]
+        case .chill: [Color(red: 0.95, green: 0.60, blue: 0.25), Color(red: 0.85, green: 0.35, blue: 0.45)]
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: mode == .club ? "waveform.path" : "moon.stars.fill")
+                Text(mode.label).font(.callout.weight(.semibold))
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(.white.opacity(isSelected ? 0.85 : 0), lineWidth: 2))
+            .opacity(isSelected ? 1 : 0.55)
+        }
+        .buttonStyle(.plain)
     }
 }

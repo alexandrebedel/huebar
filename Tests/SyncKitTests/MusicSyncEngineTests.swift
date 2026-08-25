@@ -19,6 +19,9 @@ private final class FakeEntertainment: EntertainmentControlling, @unchecked Send
     private(set) var stopped: [String] = []
     private(set) var applicationIDFetches = 0
     var failFetches = false
+    var services: [EntertainmentService] = []
+
+    func fetchEntertainmentServices() async throws -> [EntertainmentService] { services }
 
     func fetchEntertainmentConfigurations() async throws -> [EntertainmentConfig] {
         if failFetches { throw HueError.invalidResponse }

@@ -13,6 +13,7 @@ struct AppWindowView: View {
     let state: HueState
     var musicEngine: MusicSyncEngine?
     var recorder: RecorderController?
+    var entertainment: (any EntertainmentControlling)?
     @State private var selection: SidebarItem? = .home
 
     var body: some View {
@@ -86,7 +87,9 @@ struct AppWindowView: View {
             case .music:
                 if let musicEngine, let recorder {
                     ScrollView {
-                        MusicSectionView(engine: musicEngine, recorder: recorder)
+                        MusicSectionView(
+                            engine: musicEngine, recorder: recorder,
+                            state: state, entertainment: entertainment)
                             .padding(20)
                     }
                 } else {

@@ -61,6 +61,10 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
         try await list("entertainment_configuration")
     }
 
+    public func fetchEntertainmentServices() async throws -> [EntertainmentService] {
+        try await list("entertainment")
+    }
+
     public func startEntertainment(id: String) async throws {
         try await putEntertainmentAction(id: id, action: "start")
     }

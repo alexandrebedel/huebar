@@ -27,6 +27,9 @@ public final class MusicSyncEngine {
     public var mode: SyncMode = .club {
         didSet { if mode != oldValue { mapper = LightMapper(mode: mode) } }
     }
+    /// Channels gelés (pièces exclues de la sync) : cette couleur est envoyée telle
+    /// quelle à la place du mapping — la pièce garde son éclairage pendant la sync.
+    public var heldChannels: [UInt8: ChannelColor] = [:]
 
     private let config: HueConfig
     private let entertainment: any EntertainmentControlling
@@ -56,7 +59,7 @@ public final class MusicSyncEngine {
         state = .starting
         do {
             let configs = try await entertainment.fetchEntertainmentConfigurations()
-            guard let zone = configs.first(where: { $0.metadata.name == "HueBar Sync" }) ?? configs.first else {
+            guard let zone = Self.pickZone(configs) else {
                 state = .error("Aucune zone Entertainment sur le bridge")
                 return
             }
@@ -102,6 +105,11 @@ public final class MusicSyncEngine {
         state = .idle
     }
 
+    /// Règle de choix de zone, partagée avec l'UI (filtre par pièces).
+    public nonisolated static func pickZone(_ configs: [EntertainmentConfig]) -> EntertainmentConfig? {
+        configs.first(where: { $0.metadata.name == "HueBar Sync" }) ?? configs.first
+    }
+
     // MARK: - Internals
 
     private func startAudio(_ source: any AudioSource) throws {
@@ -126,8 +134,11 @@ public final class MusicSyncEngine {
                 guard let self else { return }
                 let frame = self.latestFrame.withLock { $0 }
                 self.level = min(1, frame.rms * 3)
-                let colors = self.mapper.map(frame: frame, channels: self.channels,
+                let mapped = self.mapper.map(frame: frame, channels: self.channels,
                                              time: ProcessInfo.processInfo.systemUptime)
+                let colors = self.heldChannels.isEmpty
+                    ? mapped
+                    : mapped.map { self.heldChannels[$0.channel] ?? $0 }
                 if let configID = self.configID {
                     self.transport.send(HueStreamEncoder.frame(
                         configID: configID, sequence: sequence, channels: colors))
