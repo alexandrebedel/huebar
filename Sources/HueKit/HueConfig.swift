@@ -3,10 +3,27 @@ import Foundation
 public struct HueConfig: Sendable, Equatable {
     public var bridgeIP: String
     public var appKey: String
+    /// Clé PSK du pairing (HUE_CLIENTKEY, hex) — requise pour le streaming Entertainment.
+    public var clientKey: String?
 
-    public init(bridgeIP: String, appKey: String) {
+    public init(bridgeIP: String, appKey: String, clientKey: String? = nil) {
         self.bridgeIP = bridgeIP
         self.appKey = appKey
+        self.clientKey = clientKey
+    }
+
+    /// La clientkey décodée en 16 octets (le PSK attend les octets, pas la chaîne hex).
+    public var clientKeyBytes: Data? {
+        guard let clientKey, clientKey.count % 2 == 0 else { return nil }
+        var bytes = Data(capacity: clientKey.count / 2)
+        var index = clientKey.startIndex
+        while index < clientKey.endIndex {
+            let next = clientKey.index(index, offsetBy: 2)
+            guard let byte = UInt8(clientKey[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return bytes
     }
 
     /// Lit un fichier env de la forme `export KEY=VALUE` (quotes et commentaires tolérés).
@@ -30,6 +47,7 @@ public struct HueConfig: Sendable, Equatable {
               !bridge.isEmpty, !appKey.isEmpty else {
             throw HueError.missingCredentials(resolved)
         }
-        return HueConfig(bridgeIP: bridge, appKey: appKey)
+        let clientKey = values["HUE_CLIENTKEY"].flatMap { $0.isEmpty ? nil : $0 }
+        return HueConfig(bridgeIP: bridge, appKey: appKey, clientKey: clientKey)
     }
 }

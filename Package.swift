@@ -6,9 +6,15 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "HueKit", targets: ["HueKit"]),
+        .library(name: "WaveKit", targets: ["WaveKit"]),
+        .library(name: "SyncKit", targets: ["SyncKit"]),
     ],
     targets: [
         .target(name: "HueKit"),
+        .target(name: "WaveKit", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "SyncKit", dependencies: ["HueKit", "WaveKit"]),
+        .testTarget(name: "WaveKitTests", dependencies: ["WaveKit"]),
+        .testTarget(name: "SyncKitTests", dependencies: ["SyncKit"]),
         .executableTarget(
             name: "HueBarApp",
             dependencies: ["HueKit"],
