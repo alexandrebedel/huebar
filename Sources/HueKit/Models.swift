@@ -48,6 +48,13 @@ public struct Light: Codable, Identifiable, Sendable, Equatable {
     public var dimming: Dimming?
     public var color: ColorState?
     public var owner: ResourceRef
+    public var colorTemperature: ColorTemperatureState?
+    public var effects: LightEffects?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, metadata, on, dimming, color, owner, effects
+        case colorTemperature = "color_temperature"
+    }
 }
 
 public struct Room: Codable, Identifiable, Sendable, Equatable {
@@ -57,13 +64,60 @@ public struct Room: Codable, Identifiable, Sendable, Equatable {
     public var services: [ResourceRef]
 }
 
-public struct ColorTemperatureState: Codable, Sendable, Equatable {
-    public var mirek: Int?
-    public init(mirek: Int?) { self.mirek = mirek }
+public struct MirekSchema: Codable, Sendable, Equatable {
+    public var mirekMinimum: Int
+    public var mirekMaximum: Int
+
+    public init(mirekMinimum: Int, mirekMaximum: Int) {
+        self.mirekMinimum = mirekMinimum
+        self.mirekMaximum = mirekMaximum
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mirekMinimum = "mirek_minimum"
+        case mirekMaximum = "mirek_maximum"
+    }
 }
 
-/// Action d'une scène : l'état qu'elle appliquera à une lampe (sous-ensemble affichage).
+public struct ColorTemperatureState: Codable, Sendable, Equatable {
+    public var mirek: Int?
+    public var mirekSchema: MirekSchema?
+
+    public init(mirek: Int?, mirekSchema: MirekSchema? = nil) {
+        self.mirek = mirek
+        self.mirekSchema = mirekSchema
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mirek
+        case mirekSchema = "mirek_schema"
+    }
+}
+
+/// Effets natifs d'une lampe (bougie, cheminée, prisme...). En GET, `effectValues`
+/// liste les effets supportés ; en PUT seul `effect` est envoyé.
+public struct LightEffects: Codable, Sendable, Equatable {
+    public var effect: String?
+    public var effectValues: [String]?
+    public var status: String?
+
+    public init(effect: String? = nil, effectValues: [String]? = nil, status: String? = nil) {
+        self.effect = effect
+        self.effectValues = effectValues
+        self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case effect
+        case effectValues = "effect_values"
+        case status
+    }
+}
+
+/// Action d'une scène : l'état qu'elle appliquera à une lampe.
 public struct SceneAction: Codable, Sendable, Equatable {
+    /// Lampe cible — présent sur le bridge, requis pour créer une scène.
+    public var target: ResourceRef?
     public var action: Body
 
     public struct Body: Codable, Sendable, Equatable {
@@ -88,7 +142,10 @@ public struct SceneAction: Codable, Sendable, Equatable {
         }
     }
 
-    public init(action: Body) { self.action = action }
+    public init(action: Body, target: ResourceRef? = nil) {
+        self.action = action
+        self.target = target
+    }
 }
 
 public struct HueScene: Codable, Identifiable, Sendable, Equatable {
@@ -110,11 +167,26 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
     public var on: OnState?
     public var dimming: Dimming?
     public var color: ColorState?
+    public var colorTemperature: ColorTemperatureState?
+    public var effects: LightEffects?
 
-    public init(on: OnState? = nil, dimming: Dimming? = nil, color: ColorState? = nil) {
+    public init(
+        on: OnState? = nil, dimming: Dimming? = nil, color: ColorState? = nil,
+        colorTemperature: ColorTemperatureState? = nil, effects: LightEffects? = nil
+    ) {
         self.on = on
         self.dimming = dimming
         self.color = color
+        self.colorTemperature = colorTemperature
+        self.effects = effects
+    }
+
+    /// L'état qu'applique une action de scène, converti en PUT direct sur la lampe.
+    public init(applying body: SceneAction.Body) {
+        self.init(
+            on: body.on, dimming: body.dimming, color: body.color,
+            colorTemperature: body.colorTemperature.map { ColorTemperatureState(mirek: $0.mirek) }
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -122,7 +194,12 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
         try container.encodeIfPresent(on, forKey: .on)
         try container.encodeIfPresent(dimming, forKey: .dimming)
         try container.encodeIfPresent(color, forKey: .color)
+        try container.encodeIfPresent(colorTemperature, forKey: .colorTemperature)
+        try container.encodeIfPresent(effects, forKey: .effects)
     }
 
-    private enum CodingKeys: String, CodingKey { case on, dimming, color }
+    private enum CodingKeys: String, CodingKey {
+        case on, dimming, color, effects
+        case colorTemperature = "color_temperature"
+    }
 }

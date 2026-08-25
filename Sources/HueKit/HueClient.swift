@@ -55,6 +55,20 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
         _ = try await send("PUT", "/clip/v2/resource/scene/\(id)", body: try encode(Body()))
     }
 
+    public func createScene(name: String, groupID: String, actions: [SceneAction]) async throws {
+        struct Body: Encodable {
+            let type = "scene"
+            let metadata: Metadata
+            let group: ResourceRef
+            let actions: [SceneAction]
+        }
+        _ = try await send("POST", "/clip/v2/resource/scene", body: try encode(Body(
+            metadata: Metadata(name: name),
+            group: ResourceRef(rid: groupID, rtype: "room"),
+            actions: actions
+        )))
+    }
+
     // MARK: - EntertainmentControlling
 
     public func fetchEntertainmentConfigurations() async throws -> [EntertainmentConfig] {

@@ -154,6 +154,71 @@ public final class HueState {
         }
     }
 
+    public func setLightTemperature(roomID: String, lightID: String, mirek: Int) async {
+        guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
+        rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
+        rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
+        await perform { client in
+            try await client.updateLight(
+                id: lightID,
+                LightUpdate(on: OnState(on: true), colorTemperature: ColorTemperatureState(mirek: mirek))
+            )
+        }
+    }
+
+    public func setLightEffect(roomID: String, lightID: String, effect: String) async {
+        guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
+        rooms[roomIndex].lights[lightIndex].effects?.status = effect
+        if effect != "no_effect" {
+            rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
+        }
+        await perform { client in
+            try await client.updateLight(
+                id: lightID,
+                LightUpdate(on: OnState(on: true), effects: LightEffects(effect: effect))
+            )
+        }
+    }
+
+    /// Applique un scénario de la galerie aux lampes d'une pièce (sans créer de scène).
+    public func applyScenario(roomID: String, _ scenario: GalleryScenario) async {
+        guard let roomIndex = rooms.firstIndex(where: { $0.id == roomID }) else { return }
+        let actions = SceneGallery.actions(for: scenario, lights: rooms[roomIndex].lights)
+        for action in actions {
+            guard let lightID = action.target?.rid,
+                  let lightIndex = rooms[roomIndex].lights.firstIndex(where: { $0.id == lightID })
+            else { continue }
+            rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
+            if let dimming = action.action.dimming {
+                rooms[roomIndex].lights[lightIndex].dimming = dimming
+            }
+            if let color = action.action.color {
+                rooms[roomIndex].lights[lightIndex].color = color
+            }
+            if let mirek = action.action.colorTemperature?.mirek {
+                rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
+            }
+        }
+        rooms[roomIndex].isOn = true
+        await perform { client in
+            for action in actions {
+                guard let lightID = action.target?.rid else { continue }
+                try await client.updateLight(id: lightID, LightUpdate(applying: action.action))
+            }
+        }
+    }
+
+    /// Crée le scénario comme vraie scène de la pièce sur le bridge.
+    public func saveScenario(roomID: String, _ scenario: GalleryScenario) async {
+        guard let room = rooms.first(where: { $0.id == roomID }) else { return }
+        let actions = SceneGallery.actions(for: scenario, lights: room.lights)
+        guard !actions.isEmpty else { return }
+        await perform { client in
+            try await client.createScene(name: scenario.name, groupID: roomID, actions: actions)
+        }
+        await refresh() // la nouvelle scène doit apparaître dans la grille
+    }
+
     // MARK: - Helpers
 
     private func lightIndices(roomID: String, lightID: String) -> (Int, Int)? {

@@ -4,11 +4,22 @@ import HueKit
 struct RoomDetailView: View {
     let state: HueState
     let room: RoomModel
+    @State private var showGallery = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                HStack {
+                    Text("Scènes").font(.headline)
+                    Spacer()
+                    Button {
+                        showGallery = true
+                    } label: {
+                        Label("Galerie", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .controlSize(.small)
+                }
                 if !room.scenes.isEmpty {
                     SceneGridView(scenes: room.scenes, state: state)
                 }
@@ -22,6 +33,9 @@ struct RoomDetailView: View {
                 }
             }
             .padding(20)
+        }
+        .sheet(isPresented: $showGallery) {
+            GalleryView(state: state, room: room)
         }
     }
 

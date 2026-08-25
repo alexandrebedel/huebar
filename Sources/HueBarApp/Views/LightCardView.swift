@@ -30,6 +30,23 @@ struct LightCardView: View {
 
                 Spacer()
 
+                if let effectValues = light.effects?.effectValues, effectValues.count > 1 {
+                    Menu {
+                        ForEach(effectValues, id: \.self) { effect in
+                            Button(Self.effectLabel(effect)) {
+                                Task { await state.setLightEffect(roomID: roomID, lightID: light.id, effect: effect) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(tint.foreground.opacity(hasActiveEffect ? 1 : 0.55))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(!tint.isOn)
+                    .help("Effets")
+                }
+
                 if light.color != nil {
                     ColorPicker("", selection: $color, supportsOpacity: false)
                         .labelsHidden()
@@ -42,13 +59,37 @@ struct LightCardView: View {
                 }
             }
             if light.dimming != nil {
-                TweenedSlider(target: light.dimming?.brightness ?? 100, range: 1...100) { value in
-                    Task { await state.setLightBrightness(roomID: roomID, lightID: light.id, value) }
+                HStack(spacing: 8) {
+                    Image(systemName: "sun.max")
+                        .font(.caption)
+                        .foregroundStyle(tint.foreground.opacity(0.7))
+                    TweenedSlider(target: light.dimming?.brightness ?? 100, range: 1...100) { value in
+                        Task { await state.setLightBrightness(roomID: roomID, lightID: light.id, value) }
+                    }
+                    .controlSize(.small)
+                    .tint(tint.foreground.opacity(0.85))
                 }
-                .controlSize(.small)
-                .tint(tint.foreground.opacity(0.85))
                 .disabled(!tint.isOn)
                 .opacity(tint.isOn ? 1 : 0.35)
+            }
+            if let colorTemperature = light.colorTemperature {
+                HStack(spacing: 8) {
+                    Image(systemName: "thermometer.medium")
+                        .font(.caption)
+                        .foregroundStyle(tint.foreground.opacity(0.7))
+                    TweenedSlider(
+                        target: Double(colorTemperature.mirek ?? 370),
+                        range: Double(colorTemperature.mirekSchema?.mirekMinimum ?? 153)
+                            ... Double(colorTemperature.mirekSchema?.mirekMaximum ?? 500)
+                    ) { value in
+                        Task { await state.setLightTemperature(roomID: roomID, lightID: light.id, mirek: Int(value)) }
+                    }
+                    .controlSize(.small)
+                    .tint(tint.foreground.opacity(0.85))
+                }
+                .disabled(!tint.isOn)
+                .opacity(tint.isOn ? 1 : 0.35)
+                .help("Température : froid ← → chaud")
             }
         }
         .hueCard(colors: tint.colors)
@@ -57,6 +98,27 @@ struct LightCardView: View {
                 let rgb = HueColor.rgb(from: xy)
                 color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
             }
+        }
+    }
+
+    private var hasActiveEffect: Bool {
+        if let status = light.effects?.status { status != "no_effect" } else { false }
+    }
+
+    private static func effectLabel(_ effect: String) -> String {
+        switch effect {
+        case "no_effect": "Aucun effet"
+        case "candle": "Bougie"
+        case "fire": "Cheminée"
+        case "prism": "Prisme"
+        case "sparkle": "Étincelles"
+        case "opal": "Opale"
+        case "glisten": "Scintillement"
+        case "underwater": "Sous l'eau"
+        case "cosmos": "Cosmos"
+        case "sunbeam": "Rayon de soleil"
+        case "enchant": "Enchanté"
+        default: effect.capitalized
         }
     }
 
