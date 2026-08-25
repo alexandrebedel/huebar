@@ -157,6 +157,34 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
 }
 
 @MainActor
+@Test func setRoomColorTintsColorLightsAndSendsOneGroupedPut() async {
+    let (state, fake) = await makeGalleryState()
+    await state.setRoomColor(id: "R1", red: 1, green: 0, blue: 0)
+    #expect(fake.groupedUpdates.count == 1)
+    #expect(fake.groupedUpdates[0].id == "G1")
+    #expect(fake.groupedUpdates[0].update.color != nil)
+    #expect(fake.groupedUpdates[0].update.on == OnState(on: true))
+    // Reflet local : lampes couleur teintées, la blanche (L3) reste sans couleur.
+    let expected = HueColor.xy(red: 1, green: 0, blue: 0)
+    #expect(state.rooms[0].lights[0].color?.xy == expected)
+    #expect(state.rooms[0].lights[2].color == nil)
+    let allOn = state.rooms[0].lights.allSatisfy(\.on.on)
+    #expect(allOn)
+    #expect(state.rooms[0].isOn)
+}
+
+@MainActor
+@Test func setRoomTemperatureSendsMirekAndUpdatesCTLights() async {
+    let (state, fake) = await makeGalleryState()
+    await state.setRoomTemperature(id: "R1", mirek: 250)
+    #expect(fake.groupedUpdates.count == 1)
+    #expect(fake.groupedUpdates[0].update.colorTemperature?.mirek == 250)
+    #expect(state.rooms[0].lights[0].colorTemperature?.mirek == 250)
+    #expect(state.rooms[0].lights[2].colorTemperature?.mirek == 250)
+    #expect(state.rooms[0].isOn)
+}
+
+@MainActor
 @Test func renamesAreOptimisticAndReachTheBridge() async {
     let (state, fake) = await makeGalleryState()
 

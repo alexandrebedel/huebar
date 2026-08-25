@@ -114,6 +114,46 @@ public final class HueState {
         }
     }
 
+    /// Couleur de toute la pièce (comme l'app Hue) : le PUT grouped_light l'applique
+    /// à toutes les lampes couleur — reflet local, et on:true allume tout le groupe.
+    public func setRoomColor(id: String, red: Double, green: Double, blue: Double) async {
+        guard let index = rooms.firstIndex(where: { $0.id == id }),
+              let groupedID = rooms[index].groupedLightID else { return }
+        let xy = HueColor.xy(red: red, green: green, blue: blue)
+        rooms[index].isOn = true
+        for lightIndex in rooms[index].lights.indices {
+            rooms[index].lights[lightIndex].on = OnState(on: true)
+            if rooms[index].lights[lightIndex].color != nil {
+                rooms[index].lights[lightIndex].color = ColorState(xy: xy)
+            }
+        }
+        await perform { client in
+            try await client.updateGroupedLight(
+                id: groupedID,
+                LightUpdate(on: OnState(on: true), color: ColorState(xy: xy))
+            )
+        }
+    }
+
+    /// Température de toute la pièce ; chaque lampe clampe au besoin sur son schéma.
+    public func setRoomTemperature(id: String, mirek: Int) async {
+        guard let index = rooms.firstIndex(where: { $0.id == id }),
+              let groupedID = rooms[index].groupedLightID else { return }
+        rooms[index].isOn = true
+        for lightIndex in rooms[index].lights.indices {
+            rooms[index].lights[lightIndex].on = OnState(on: true)
+            if rooms[index].lights[lightIndex].colorTemperature != nil {
+                rooms[index].lights[lightIndex].colorTemperature?.mirek = mirek
+            }
+        }
+        await perform { client in
+            try await client.updateGroupedLight(
+                id: groupedID,
+                LightUpdate(on: OnState(on: true), colorTemperature: ColorTemperatureState(mirek: mirek))
+            )
+        }
+    }
+
     public func recallScene(id: String) async {
         markSceneActive(id: id) // le highlight suit le clic, le refresh confirmera
         await perform { client in

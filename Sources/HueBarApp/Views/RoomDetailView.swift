@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import HueKit
 
@@ -7,6 +8,8 @@ struct RoomDetailView: View {
     @State private var showGallery = false
     @State private var renaming = false
     @State private var newName = ""
+    @State private var roomColor: Color = .white
+    @State private var colorTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -64,8 +67,40 @@ struct RoomDetailView: View {
             .tint(tint.foreground.opacity(0.85))
             .disabled(room.groupedLightID == nil || !tint.isOn)
             .opacity(tint.isOn ? 1 : 0.35)
+
+            // Couleur / température de toute la pièce, comme l'app Hue.
+            HStack(spacing: 10) {
+                if let mirekRange = HueCardStyle.roomMirekRange(room) {
+                    Image(systemName: "thermometer.medium")
+                        .font(.caption)
+                        .foregroundStyle(tint.foreground.opacity(0.7))
+                    TweenedSlider(target: HueCardStyle.averageMirek(room), range: mirekRange) { value in
+                        Task { await state.setRoomTemperature(id: room.id, mirek: Int(value)) }
+                    }
+                    .controlSize(.small)
+                    .tint(tint.foreground.opacity(0.85))
+                    .help("Température de la pièce : froid ← → chaud")
+                }
+                if room.lights.contains(where: { $0.color != nil }) {
+                    ColorPicker("", selection: $roomColor, supportsOpacity: false)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .onChange(of: roomColor) { _, newValue in
+                            scheduleRoomColorSend(newValue)
+                        }
+                        .help("Couleur de la pièce")
+                }
+            }
+            .disabled(room.groupedLightID == nil || !tint.isOn)
+            .opacity(tint.isOn ? 1 : 0.35)
         }
         .hueCard(colors: tint.colors)
+        .onAppear {
+            if let xy = room.lights.first(where: { $0.on.on && $0.color != nil })?.color?.xy {
+                let rgb = HueColor.rgb(from: xy)
+                roomColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+            }
+        }
         .contextMenu {
             Button("Renommer la pièce…") {
                 newName = room.name
@@ -74,6 +109,20 @@ struct RoomDetailView: View {
         }
         .renameAlert("Renommer la pièce", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameRoom(id: room.id, name: name) }
+        }
+    }
+
+    /// Comme sur les lampes : le ColorPicker émet en continu, on n'envoie que la dernière valeur.
+    private func scheduleRoomColorSend(_ newColor: Color) {
+        colorTask?.cancel()
+        colorTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            guard let rgb = NSColor(newColor).usingColorSpace(.sRGB) else { return }
+            await state.setRoomColor(
+                id: room.id,
+                red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent
+            )
         }
     }
 }

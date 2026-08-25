@@ -33,6 +33,25 @@ enum HueCardStyle {
         return levels.reduce(0, +) / Double(levels.count)
     }
 
+    /// Plage mirek commune aux lampes CT de la pièce (intersection des schémas) ;
+    /// nil sans lampe à température réglable.
+    static func roomMirekRange(_ room: RoomModel) -> ClosedRange<Double>? {
+        let ctLights = room.lights.filter { $0.colorTemperature != nil }
+        guard !ctLights.isEmpty else { return nil }
+        let schemas = ctLights.compactMap { $0.colorTemperature?.mirekSchema }
+        guard let lower = schemas.map(\.mirekMinimum).max(),
+              let upper = schemas.map(\.mirekMaximum).min(), lower < upper
+        else { return 153...500 }
+        return Double(lower)...Double(upper)
+    }
+
+    /// Mirek moyen des lampes CT allumées — la valeur du slider de température de pièce.
+    static func averageMirek(_ room: RoomModel) -> Double {
+        let mireks = room.lights.filter { $0.on.on }.compactMap { $0.colorTemperature?.mirek }
+        guard !mireks.isEmpty else { return 370 }
+        return Double(mireks.reduce(0, +)) / Double(mireks.count)
+    }
+
     // MARK: - Interne
 
     private static var offTint: Tint {
