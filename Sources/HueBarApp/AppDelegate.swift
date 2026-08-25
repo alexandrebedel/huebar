@@ -6,7 +6,7 @@ import SyncKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private let popover = NSPopover()
+    private var panel: PanelWindowController!
     private let hotKeys = HotKeyCenter()
     private var state: HueState!
     private var musicEngine: MusicSyncEngine?
@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state = HueState(client: client)
             let engine = MusicSyncEngine(config: config, entertainment: client, transport: DTLSStreamer())
             // Couplage hors de la vue : un REC accroché à la source de la sync doit être
-            // finalisé quand la sync tombe, même popover fermé (la vue ne reçoit alors
+            // finalisé quand la sync tombe, même fenêtre fermée (la vue ne reçoit alors
             // aucun update SwiftUI).
             engine.onDidTeardown = { [recorderController] in
                 if recorderController.isSharingExternalSource {
@@ -34,38 +34,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: PanelView(state: state, musicEngine: musicEngine, recorder: recorderController))
+        panel = PanelWindowController(
+            rootView: AppWindowView(state: state, musicEngine: musicEngine, recorder: recorderController))
+        panel.onShow = { [state] in Task { await state?.refresh() } }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "lightbulb.fill", accessibilityDescription: "HueBar")
             button.target = self
-            button.action = #selector(togglePopover)
+            button.action = #selector(togglePanel)
         }
 
-        HotKeyCenter.action = { [weak self] in self?.togglePopover() }
+        HotKeyCenter.action = { [weak self] in self?.panel.toggle() }
         hotKeys.register()
 
         registerLoginItemOnFirstLaunch()
     }
 
-    /// Deep link huebar://panel — utilisé par le contrôle du Control Center.
+    /// Deep link huebar://panel — quicklink Raycast, scripting.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard urls.contains(where: { $0.scheme == "huebar" && $0.host == "panel" }) else { return }
-        togglePopover()
+        panel.show()
     }
 
-    @objc private func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if let button = statusItem.button {
-            Task { await state.refresh() }
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-            NSApp.activate()
-        }
+    /// Réouverture (open -a HueBar, Raycast « Open Application ») : montrer la fenêtre.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panel.show()
+        return false
+    }
+
+    @objc private func togglePanel() {
+        panel.toggle()
     }
 
     /// Quitter pendant un enregistrement laisserait un WAV au header non finalisé (illisible),
