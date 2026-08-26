@@ -9,7 +9,7 @@ final class PanelWindowController {
     static let defaultSize = NSSize(width: 900, height: 620)
 
     private let window: PanelWindow
-    private var deactivationObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
     var onShow: (() -> Void)?
 
     init(rootView: some View) {
@@ -34,27 +34,29 @@ final class PanelWindowController {
         }
         window.contentViewController = NSHostingController(rootView: rootView)
 
-        // Clic hors de l'app = masquer. On ne masque PAS quand le focus part vers un
-        // agent système : les popups de permissions (TCC, SecurityAgent…) ne sont pas
-        // des apps `.regular`, et masquer pendant l'approbation était vécu comme un crash.
-        deactivationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
+        // Clic hors de l'app = masquer, déclenché par l'ACTIVATION d'une vraie app
+        // (`.regular`). Les popups de permissions (TCC, SecurityAgent…) volent le focus
+        // sans jamais activer d'app régulière — et pendant qu'ils sont affichés,
+        // `frontmostApplication` rapporte l'app régulière d'arrière-plan : interroger
+        // le premier plan à la désactivation masquait donc la fenêtre pendant
+        // l'approbation (constaté en réel). Seul l'événement d'activation est fiable.
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             Task { @MainActor [weak self] in
-                // frontmostApplication n'est pas encore à jour au moment de la notification.
-                try? await Task.sleep(for: .milliseconds(150))
-                self?.hideIfUserLeftApp()
+                self?.hideIfUserSwitched(to: app)
             }
         }
     }
 
-    /// Masque seulement si l'utilisateur est vraiment parti dans une autre app :
-    /// premier plan `.regular` (les agents système — popups TCC — sont `.accessory`).
-    private func hideIfUserLeftApp() {
-        guard window.isVisible, !NSApp.isActive,
-              let frontmost = NSWorkspace.shared.frontmostApplication,
-              frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              frontmost.activationPolicy == .regular
+    /// Masque seulement si l'utilisateur est vraiment parti : une autre app `.regular`
+    /// vient d'être activée (les agents système sont `.accessory`/`.prohibited`).
+    private func hideIfUserSwitched(to app: NSRunningApplication?) {
+        guard let app,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              app.activationPolicy == .regular,
+              window.isVisible, !NSApp.isActive
         else { return }
         hide()
     }
