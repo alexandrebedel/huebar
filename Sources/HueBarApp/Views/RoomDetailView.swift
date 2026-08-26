@@ -15,6 +15,7 @@ struct RoomDetailView: View {
     @State private var captureName = ""
 
     var body: some View {
+        let tint = HueCardStyle.tint(for: room)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
@@ -51,6 +52,18 @@ struct RoomDetailView: View {
             }
             .padding(20)
         }
+        // Façon app Hue : la couleur de la pièce part du haut de la fenêtre et fond
+        // dans l'arrière-plan (dégradé des couleurs réelles, masqué verticalement).
+        .background(alignment: .top) {
+            LinearGradient(colors: tint.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                .mask(LinearGradient(
+                    stops: [.init(color: .black, location: 0),
+                            .init(color: .black.opacity(0.55), location: 0.45),
+                            .init(color: .clear, location: 1)],
+                    startPoint: .top, endPoint: .bottom))
+                .frame(height: 380)
+                .ignoresSafeArea()
+        }
         .sheet(isPresented: $showGallery) {
             GalleryView(state: state, roomID: room.id)
         }
@@ -68,8 +81,8 @@ struct RoomDetailView: View {
         }
     }
 
-    /// Header façon app Hue : grande carte teintée de la couleur réelle de la pièce,
-    /// slider intégré (moyenne des lampes allumées), le tout grisé quand c'est éteint.
+    /// Header façon app Hue : contrôles posés directement sur le dégradé pleine
+    /// largeur (couleur réelle de la pièce), slider = moyenne des lampes allumées.
     private var header: some View {
         let tint = HueCardStyle.tint(for: room)
         return VStack(spacing: 12) {
@@ -122,7 +135,10 @@ struct RoomDetailView: View {
             .disabled(room.groupedLightID == nil || !tint.isOn)
             .opacity(tint.isOn ? 1 : 0.35)
         }
-        .hueCard(colors: tint.colors)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle()) // clic droit possible sur toute la zone du header
         .onAppear { syncSwatchFromLights() }
         // Scène rappelée ou refresh : la pastille suit la couleur réelle de la pièce.
         .onChange(of: room.lights) { _, _ in syncSwatchFromLights() }
