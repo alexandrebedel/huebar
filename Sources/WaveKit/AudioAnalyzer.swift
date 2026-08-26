@@ -82,9 +82,9 @@ public final class AudioAnalyzer {
             return min(1, sqrt(mean) / 1024 * gain)
         }
 
-        let bass = bandLevel(20, 150, gain: 8)
-        let mid = bandLevel(150, 2_000, gain: 12)
-        let high = bandLevel(2_000, 16_000, gain: 20)
+        let bass = bandLevel(20, 150, gain: 10)
+        let mid = bandLevel(150, 2_000, gain: 15)
+        let high = bandLevel(2_000, 16_000, gain: 24)
 
         // Flux spectral des basses : somme des HAUSSES d'amplitude bin par bin — une
         // basse tenue est stable (flux ≈ 0), seul le transitoire du kick ressort.

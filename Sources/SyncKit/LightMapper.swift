@@ -22,7 +22,7 @@ public struct LightMapper {
         static let brightnessGamma = 0.6
 
         // Lissage des entrées d'analyse.
-        static let rmsInputGain = 2.5
+        static let rmsInputGain = 3.2
         static let rmsSmoothingRate = 4.5  // 1/s — suit le morceau de près (Chill réactif)
         static let bassSmoothingRate = 5.0 // 1/s
 
@@ -35,8 +35,8 @@ public struct LightMapper {
         static let clubBeatHueJump = 0.05
         static let clubFlashDecayPerSecond = 4.0 // extinction du flash ~250 ms
         static let clubBassWeight = 0.6, clubMidWeight = 0.3, clubHighWeight = 0.2
-        static let clubBaseBrightness = 0.06
-        static let clubEnergyGain = 0.75
+        static let clubBaseBrightness = 0.10
+        static let clubEnergyGain = 0.85
         static let clubMinSaturation = 0.55
         static let clubHighDesaturation = 0.5
         static let clubChannelHueSpread = 0.06
@@ -45,10 +45,10 @@ public struct LightMapper {
         // Chill.
         static let chillHueDriftPerSecond = 0.015
         static let chillSpectralPullGain = 0.03
-        static let chillBaseBrightness = 0.08
-        static let chillRMSGain = 0.9
-        static let chillBassGain = 0.35
-        static let chillMidGain = 0.1
+        static let chillBaseBrightness = 0.12
+        static let chillRMSGain = 1.05
+        static let chillBassGain = 0.45
+        static let chillMidGain = 0.12
         static let chillSaturation = 0.6
         static let chillChannelHueSpread = 0.04
 
