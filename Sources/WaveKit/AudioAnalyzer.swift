@@ -86,6 +86,24 @@ public final class AudioAnalyzer {
         let mid = bandLevel(150, 2_000, gain: 15)
         let high = bandLevel(2_000, 16_000, gain: 24)
 
+        // Chaleur du timbre : centroïde spectral (barycentre des amplitudes) projeté en
+        // log sur 200 Hz…8 kHz — un centroïde bas = son sombre/chaud, haut = brillant/froid.
+        var weightedSum = 0.0
+        var amplitudeSum = 0.0
+        for bin in 1..<half {
+            let amplitude = sqrt(Double(magnitudes[bin]))
+            weightedSum += amplitude * Double(bin) * binWidth
+            amplitudeSum += amplitude
+        }
+        let warmth: Double
+        if amplitudeSum > 0.5 { // en dessous : bruit de fond, chaleur neutre
+            let centroid = max(weightedSum / amplitudeSum, 1)
+            let position = (log2(centroid) - log2(200)) / (log2(8_000) - log2(200))
+            warmth = 1 - min(1, max(0, position))
+        } else {
+            warmth = 0.5
+        }
+
         // Flux spectral des basses : somme des HAUSSES d'amplitude bin par bin — une
         // basse tenue est stable (flux ≈ 0), seul le transitoire du kick ressort.
         let lowFirst = max(1, Int(20 / binWidth))
@@ -118,6 +136,6 @@ public final class AudioAnalyzer {
         fluxHistory.append(flux)
         if fluxHistory.count > 46 { fluxHistory.removeFirst() }
 
-        return AnalysisFrame(rms: Double(rms), bass: bass, mid: mid, high: high, beat: beat)
+        return AnalysisFrame(rms: Double(rms), bass: bass, mid: mid, high: high, beat: beat, warmth: warmth)
     }
 }

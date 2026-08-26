@@ -10,8 +10,8 @@ private let channels = [
 ]
 
 private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
-                   high: Double = 0.2, beat: Bool = false) -> AnalysisFrame {
-    AnalysisFrame(rms: rms, bass: bass, mid: mid, high: high, beat: beat)
+                   high: Double = 0.2, beat: Bool = false, warmth: Double = 0.5) -> AnalysisFrame {
+    AnalysisFrame(rms: rms, bass: bass, mid: mid, high: high, beat: beat, warmth: warmth)
 }
 
 @Test func producesOneColorPerChannel() {
@@ -158,6 +158,24 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     for (a, b) in zip(last, next) {
         #expect(abs(a.red - b.red) < 0.35) // transition lissée, pas de flip
     }
+}
+
+@Test func chillHueFollowsSoundWarmth() {
+    // La chaleur du son (centroïde) pilote la teinte : sombre → oranges, brillant → bleus.
+    var warmMapper = LightMapper(mode: .chill)
+    var coldMapper = LightMapper(mode: .chill)
+    var warmTotals = (red: 0.0, blue: 0.0)
+    var coldTotals = (red: 0.0, blue: 0.0)
+    for i in 0..<600 {
+        let time = Double(i) * 0.02
+        let warmColors = warmMapper.map(frame: frame(warmth: 1), channels: channels, time: time)
+        let coldColors = coldMapper.map(frame: frame(warmth: 0), channels: channels, time: time)
+        guard i >= 400 else { continue } // laisse la teinte converger vers la cible
+        for color in warmColors { warmTotals.red += color.red; warmTotals.blue += color.blue }
+        for color in coldColors { coldTotals.red += color.red; coldTotals.blue += color.blue }
+    }
+    #expect(warmTotals.red > warmTotals.blue)
+    #expect(coldTotals.blue > coldTotals.red)
 }
 
 @Test func customAnchorsConstrainHuesLikeBuiltinThemes() {

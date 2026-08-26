@@ -54,17 +54,15 @@ struct MusicSectionView: View {
             }
 
             // Thèmes : la palette de couleurs imposée au mapper, quel que soit le mode.
-            HStack(spacing: 8) {
+            // Grille adaptative : intégrés + customs + « + » sur autant de lignes que nécessaire.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)],
+                      alignment: .leading, spacing: 8) {
                 ForEach(SyncTheme.allCases) { theme in
                     ThemeChip(label: theme.label, anchors: theme.hueAnchors,
                               isSelected: themeStorage == theme.rawValue) {
                         selectTheme(id: theme.rawValue, anchors: theme.hueAnchors)
                     }
                 }
-            }
-
-            // Thèmes custom : créés dans l'éditeur, même mécanique d'ancres.
-            HStack(spacing: 8) {
                 ForEach(customThemes) { theme in
                     ThemeChip(label: theme.name, anchors: theme.anchors,
                               isSelected: themeStorage == theme.selectionID) {
@@ -467,6 +465,23 @@ private struct SyncVisualizer: View {
                 .opacity(engine.frame.beat ? 1 : 0.35)
                 .animation(.easeOut(duration: 0.15), value: engine.frame.beat)
                 .help("Beat détecté")
+
+            // Chaleur du son (centroïde spectral) : froid à gauche, chaud à droite.
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(LinearGradient(
+                        colors: [Color(hue: 0.58, saturation: 0.8, brightness: 0.95),
+                                 Color(hue: 0.80, saturation: 0.7, brightness: 0.9),
+                                 Color(hue: 0.03, saturation: 0.85, brightness: 0.95)],
+                        startPoint: .leading, endPoint: .trailing))
+                    .frame(width: 46, height: 6)
+                Circle()
+                    .fill(.white)
+                    .frame(width: 9, height: 9)
+                    .shadow(radius: 1)
+                    .offset(x: engine.frame.warmth * 37)
+            }
+            .help("Chaleur du son : la teinte suit ce curseur")
 
             Spacer()
 

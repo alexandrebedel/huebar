@@ -47,6 +47,16 @@ private func analyzeAll(_ samples: [Float]) -> [AnalysisFrame] {
     }
 }
 
+@Test func warmthTracksSpectralCentroid() {
+    // Son sombre (80 Hz) = chaud, son brillant (8 kHz) = froid, silence = neutre.
+    let warm = analyzeAll(sine(frequency: 80, amplitude: 0.8, frames: 48_000)).dropFirst(5)
+    #expect(warm.allSatisfy { $0.warmth > 0.7 })
+    let cold = analyzeAll(sine(frequency: 8_000, amplitude: 0.8, frames: 48_000)).dropFirst(5)
+    #expect(cold.allSatisfy { $0.warmth < 0.3 })
+    let silent = analyzeAll([Float](repeating: 0, count: 48_000))
+    #expect(silent.allSatisfy { $0.warmth == 0.5 })
+}
+
 @Test func kickPatternProducesBeats() {
     // 3 s : kick de 100 ms de sinus 60 Hz toutes les 500 ms (≈ 120 BPM), silence entre.
     var samples: [Float] = []

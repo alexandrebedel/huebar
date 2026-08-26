@@ -42,9 +42,16 @@ public struct LightMapper {
         static let clubChannelHueSpread = 0.06
         static let clubHighHueShift = 0.05
 
+        // Chaleur du son (centroïde spectral) → teinte cible, le long de l'axe
+        // « thermique » bleu → violet → rouge/orange (jamais par le vert).
+        static let coldHue = 0.58            // bleu (son brillant)
+        static let warmHueSpan = 0.45        // 0.58 + 0.45 ≈ 0.03 : orange (son sombre)
+        static let warmthSmoothingRate = 2.0 // 1/s
+        static let chillWarmthPullPerSecond = 0.25
+        static let clubWarmthPullPerSecond = 0.08 // léger : la rotation de teinte garde la main
+
         // Chill.
         static let chillHueDriftPerSecond = 0.015
-        static let chillSpectralPullGain = 0.03
         static let chillBaseBrightness = 0.12
         static let chillRMSGain = 1.05
         static let chillBassGain = 0.45
@@ -65,6 +72,7 @@ public struct LightMapper {
     private var flash = 0.0    // niveau de flash (Club), décroît vite
     private var smoothedRMS = 0.0
     private var smoothedBass = 0.0
+    private var smoothedWarmth = 0.5
     private var lastTime: Double?
     private var smoothedOutput: [UInt8: (red: Double, green: Double, blue: Double)] = [:]
 
@@ -80,6 +88,7 @@ public struct LightMapper {
         smoothedRMS += (min(1, frame.rms * Tuning.rmsInputGain) - smoothedRMS)
             * min(1, dt * Tuning.rmsSmoothingRate)
         smoothedBass += (frame.bass - smoothedBass) * min(1, dt * Tuning.bassSmoothingRate)
+        smoothedWarmth += (frame.warmth - smoothedWarmth) * min(1, dt * Tuning.warmthSmoothingRate)
 
         let targets = switch mode {
         case .club: mapClub(frame: frame, channels: channels, dt: dt)
@@ -96,6 +105,7 @@ public struct LightMapper {
             baseHue = (baseHue + Tuning.clubBeatHueJump).truncatingRemainder(dividingBy: 1)
             flash = 1.0
         }
+        pullHueTowardWarmth(dt: dt, rate: Tuning.clubWarmthPullPerSecond)
         flash = max(0, flash - dt * Tuning.clubFlashDecayPerSecond)
 
         // Mix spectral : les basses portent, mais nappes (mids) et hats (aigus) participent.
@@ -116,10 +126,9 @@ public struct LightMapper {
     }
 
     private mutating func mapChill(frame: AnalysisFrame, channels: [SyncChannel], dt: Double) -> [ChannelColor] {
-        // Dérive lente ; le spectre tire doucement la teinte (aigus -> plus chaud).
-        let spectralPull = min(0.3, frame.high * 0.4) - min(0.2, frame.bass * 0.2)
-        baseHue = (baseHue + dt * (Tuning.chillHueDriftPerSecond + spectralPull * Tuning.chillSpectralPullGain) + 1)
-            .truncatingRemainder(dividingBy: 1)
+        // Dérive lente pour la vie ; la chaleur du son pilote la teinte de fond.
+        baseHue = (baseHue + dt * Tuning.chillHueDriftPerSecond).truncatingRemainder(dividingBy: 1)
+        pullHueTowardWarmth(dt: dt, rate: Tuning.chillWarmthPullPerSecond)
 
         // Respire avec le morceau : RMS large bande + houle des basses.
         let brightness = min(1, Tuning.chillBaseBrightness + (smoothedRMS * Tuning.chillRMSGain
@@ -130,6 +139,16 @@ public struct LightMapper {
             let hue = anchoredHue + channel.x * Tuning.chillChannelHueSpread
             return color(channel: channel.id, hue: hue, saturation: Tuning.chillSaturation, value: brightness)
         }
+    }
+
+    /// Tire la teinte de fond vers celle correspondant à la chaleur du son
+    /// (distance circulaire — le chemin passe par les violets, l'axe thermique).
+    private mutating func pullHueTowardWarmth(dt: Double, rate: Double) {
+        let target = Tuning.coldHue + smoothedWarmth * Tuning.warmHueSpan
+        var delta = (target - baseHue).truncatingRemainder(dividingBy: 1)
+        if delta > 0.5 { delta -= 1 }
+        if delta < -0.5 { delta += 1 }
+        baseHue = (baseHue + delta * min(1, dt * rate) + 1).truncatingRemainder(dividingBy: 1)
     }
 
     /// Attire la teinte vers l'ancre du thème la plus proche (distance circulaire),
