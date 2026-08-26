@@ -1,13 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Fenêtre du panneau : centrée sur l'écran actif, sans barre de titre visible,
-/// persistante (elle reste ouverte si elle perd le focus). Échap ou ⌘W la masquent.
+/// Fenêtre du panneau : centrée sur l'écran actif, sans barre de titre visible.
+/// Échap, ⌘W ou un clic dans une autre app la masquent — mais pas les boîtes de
+/// permissions système, qui volent le focus sans que l'utilisateur soit « parti ».
 @MainActor
 final class PanelWindowController {
     static let defaultSize = NSSize(width: 900, height: 620)
 
     private let window: PanelWindow
+    private var deactivationObserver: NSObjectProtocol?
     var onShow: (() -> Void)?
 
     init(rootView: some View) {
@@ -31,6 +33,30 @@ final class PanelWindowController {
             window.standardWindowButton(button)?.isHidden = true
         }
         window.contentViewController = NSHostingController(rootView: rootView)
+
+        // Clic hors de l'app = masquer. On ne masque PAS quand le focus part vers un
+        // agent système : les popups de permissions (TCC, SecurityAgent…) ne sont pas
+        // des apps `.regular`, et masquer pendant l'approbation était vécu comme un crash.
+        deactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                // frontmostApplication n'est pas encore à jour au moment de la notification.
+                try? await Task.sleep(for: .milliseconds(150))
+                self?.hideIfUserLeftApp()
+            }
+        }
+    }
+
+    /// Masque seulement si l'utilisateur est vraiment parti dans une autre app :
+    /// premier plan `.regular` (les agents système — popups TCC — sont `.accessory`).
+    private func hideIfUserLeftApp() {
+        guard window.isVisible, !NSApp.isActive,
+              let frontmost = NSWorkspace.shared.frontmostApplication,
+              frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              frontmost.activationPolicy == .regular
+        else { return }
+        hide()
     }
 
     func show() {
