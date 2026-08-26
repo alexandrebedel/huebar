@@ -10,7 +10,6 @@ struct LightCardView: View {
     let light: Light
     @State private var color: Color = .white
     @State private var colorTask: Task<Void, Never>?
-    @State private var suppressColorSend = false
     @State private var renaming = false
     @State private var newName = ""
     @State private var gradientColors: [Color] = []
@@ -57,11 +56,11 @@ struct LightCardView: View {
                         .labelsHidden()
                         .controlSize(.small)
                         .onChange(of: color) { _, newValue in
-                            if suppressColorSend {
-                                suppressColorSend = false
-                            } else {
-                                scheduleColorSend(newValue)
-                            }
+                            // Écho du resync modèle→pastille (le picker renormalise et
+                            // réécrit le binding) : rien à envoyer si égal au modèle —
+                            // sinon le PUT on:true rallumait la lampe toute seule.
+                            if let modelColor, Self.close(newValue, modelColor) { return }
+                            scheduleColorSend(newValue)
                         }
                         .disabled(!tint.isOn)
                         .opacity(tint.isOn ? 1 : 0.4)
@@ -93,7 +92,13 @@ struct LightCardView: View {
                     }
                     Spacer()
                 }
-                .onChange(of: gradientColors) { _, _ in scheduleGradientSend() }
+                .onChange(of: gradientColors) { _, newValue in
+                    // Écho du modèle (init/resync) : n'envoie que ce qui diffère vraiment.
+                    let model = modelGradientColors
+                    if newValue.count == model.count,
+                       zip(newValue, model).allSatisfy({ Self.close($0, $1) }) { return }
+                    scheduleGradientSend()
+                }
                 .disabled(!tint.isOn)
                 .opacity(tint.isOn ? 1 : 0.4)
                 .help("Dégradé : un point de couleur par pipette, réparti sur le bandeau")
@@ -128,14 +133,10 @@ struct LightCardView: View {
         .renameAlert("Renommer la lampe", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameLight(roomID: roomID, lightID: light.id, name: name) }
         }
-        // Une scène (ou un refresh) change la couleur du modèle : la pastille du
-        // picker doit suivre — sans renvoyer la valeur au bridge en boucle.
-        .onChange(of: light.color) { _, newValue in
-            guard let xy = newValue?.xy else { return }
-            let rgb = HueColor.rgb(from: xy)
-            let modelColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
-            guard !Self.close(modelColor, color) else { return }
-            suppressColorSend = true
+        // Une scène (ou un refresh) change la couleur du modèle : la pastille suit.
+        // L'onChange du picker ignore cet écho (comparaison au modèle, pas de flag).
+        .onChange(of: light.color) { _, _ in
+            guard let modelColor, !Self.close(modelColor, color) else { return }
             color = modelColor
         }
         .onAppear {
@@ -157,13 +158,29 @@ struct LightCardView: View {
         }
     }
 
-    /// Égalité approchée en sRGB — évite les allers-retours RGB↔xy qui divergent d'un epsilon.
+    /// Couleur du modèle (xy bridge) convertie pour l'affichage.
+    private var modelColor: Color? {
+        guard let xy = light.color?.xy else { return nil }
+        let rgb = HueColor.rgb(from: xy)
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    /// Points du bandeau côté modèle, convertis pour l'affichage.
+    private var modelGradientColors: [Color] {
+        (light.gradient?.points ?? []).map { point in
+            let rgb = HueColor.rgb(from: point.color.xy)
+            return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+        }
+    }
+
+    /// Égalité approchée en sRGB — absorbe les allers-retours RGB↔xy et la
+    /// renormalisation du ColorPicker (conversions d'espaces colorimétriques).
     static func close(_ first: Color, _ second: Color) -> Bool {
         guard let a = NSColor(first).usingColorSpace(.sRGB),
               let b = NSColor(second).usingColorSpace(.sRGB) else { return false }
-        return abs(a.redComponent - b.redComponent) < 0.01
-            && abs(a.greenComponent - b.greenComponent) < 0.01
-            && abs(a.blueComponent - b.blueComponent) < 0.01
+        return abs(a.redComponent - b.redComponent) < 0.02
+            && abs(a.greenComponent - b.greenComponent) < 0.02
+            && abs(a.blueComponent - b.blueComponent) < 0.02
     }
 
     private var hasActiveEffect: Bool {

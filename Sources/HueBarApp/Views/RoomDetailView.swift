@@ -10,7 +10,6 @@ struct RoomDetailView: View {
     @State private var newName = ""
     @State private var roomColor: Color = .white
     @State private var colorTask: Task<Void, Never>?
-    @State private var suppressColorSend = false
     @State private var capturing = false
     @State private var captureName = ""
 
@@ -123,11 +122,11 @@ struct RoomDetailView: View {
                         .labelsHidden()
                         .controlSize(.small)
                         .onChange(of: roomColor) { _, newValue in
-                            if suppressColorSend {
-                                suppressColorSend = false
-                            } else {
-                                scheduleRoomColorSend(newValue)
-                            }
+                            // Écho du resync modèle→pastille : rien à envoyer si égal
+                            // au modèle (sinon le PUT on:true rallumait la pièce).
+                            if let modelColor = roomModelColor,
+                               LightCardView.close(newValue, modelColor) { return }
+                            scheduleRoomColorSend(newValue)
                         }
                         .help("Couleur de la pièce")
                 }
@@ -153,12 +152,16 @@ struct RoomDetailView: View {
         }
     }
 
-    private func syncSwatchFromLights() {
-        guard let xy = room.lights.first(where: { $0.on.on && $0.color != nil })?.color?.xy else { return }
+    /// Couleur de référence de la pièce : première lampe couleur allumée.
+    private var roomModelColor: Color? {
+        guard let xy = room.lights.first(where: { $0.on.on && $0.color != nil })?.color?.xy else { return nil }
         let rgb = HueColor.rgb(from: xy)
-        let modelColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
-        guard !LightCardView.close(modelColor, roomColor) else { return }
-        suppressColorSend = true
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    private func syncSwatchFromLights() {
+        guard let modelColor = roomModelColor,
+              !LightCardView.close(modelColor, roomColor) else { return }
         roomColor = modelColor
     }
 
