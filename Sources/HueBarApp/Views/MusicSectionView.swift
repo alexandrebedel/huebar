@@ -93,12 +93,30 @@ struct MusicSectionView: View {
                 .help("Créer un thème")
             }
 
+            // Scènes de la maison utilisables comme thèmes (teintes de leurs couleurs).
+            if !sceneThemes.isEmpty {
+                Text("Depuis vos scènes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(sceneThemes, id: \.id) { entry in
+                            ThemeChip(label: entry.name, anchors: entry.anchors,
+                                      isSelected: themeStorage == "scene:\(entry.id)") {
+                                selectTheme(id: "scene:\(entry.id)", anchors: entry.anchors)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Master de luminosité de la sync : toujours visible, persisté par mode.
+            // À fond (2.0), les pics saturent : les lampes atteignent leur vrai maximum.
             HStack(spacing: 8) {
                 Image(systemName: "sun.min")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Slider(value: tuningBinding(\.brightness), in: 0.2...1.5)
+                Slider(value: tuningBinding(\.brightness), in: 0.2...2.0)
                     .controlSize(.small)
                 Image(systemName: "sun.max")
                     .font(.caption)
@@ -218,7 +236,11 @@ struct MusicSectionView: View {
             }
         }
         .task { await loadZoneMap() }
-        .onChange(of: state.rooms) { _, _ in rebuildEntries() }
+        .onChange(of: state.rooms) { _, _ in
+            rebuildEntries()
+            // Un thème-scène sélectionné avant que les pièces soient chargées se résout ici.
+            if themeStorage.hasPrefix("scene:") { applyStoredTheme() }
+        }
         .onChange(of: engine.state) { _, newState in
             // Toute sortie de .running tue la source de la sync : un enregistrement qui la
             // partageait doit être finalisé (un REC standalone, lui, survit).
@@ -280,13 +302,36 @@ struct MusicSectionView: View {
         CustomTheme.decodeList(customThemesStorage)
     }
 
+    /// Scènes colorées de la maison converties en thèmes (dédupliquées par nom —
+    /// « Tokyo » présent dans deux pièces n'apparaît qu'une fois).
+    private var sceneThemes: [(id: String, name: String, anchors: [Double])] {
+        var seenNames = Set<String>()
+        var result: [(id: String, name: String, anchors: [Double])] = []
+        for scene in state.rooms.flatMap(\.scenes) + (state.all?.scenes ?? []) {
+            guard !seenNames.contains(scene.metadata.name) else { continue }
+            let anchors = SceneGradient.hueAnchors(for: scene)
+            guard anchors.count >= 2 else { continue } // scènes de blancs : teinte non significative
+            seenNames.insert(scene.metadata.name)
+            result.append((scene.id, scene.metadata.name, anchors))
+        }
+        return result
+    }
+
     private func selectTheme(id: String, anchors: [Double]?) {
         themeStorage = id
         engine.themeAnchors = anchors
     }
 
-    /// Restaure le thème persisté (intégré ou custom) ; un custom disparu retombe sur Spectre.
+    /// Restaure le thème persisté (intégré, custom ou scène) ; un custom disparu
+    /// retombe sur Spectre, une scène pas encore chargée est retentée au refresh.
     private func applyStoredTheme() {
+        if themeStorage.hasPrefix("scene:") {
+            let sceneID = String(themeStorage.dropFirst("scene:".count))
+            if let entry = sceneThemes.first(where: { $0.id == sceneID }) {
+                engine.themeAnchors = entry.anchors
+            }
+            return
+        }
         if let custom = customThemes.first(where: { $0.selectionID == themeStorage }) {
             engine.themeAnchors = custom.anchors
         } else {

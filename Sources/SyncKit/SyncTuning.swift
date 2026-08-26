@@ -9,7 +9,8 @@ public struct SyncTuning: Sendable, Equatable, Codable {
     public var punch: Double
     /// Poids du flash sur les beats (Club uniquement), 0 … 0.6.
     public var flash: Double
-    /// Master de luminosité appliqué à la sortie : 0.2 tamisé … 1.5 poussé.
+    /// Master de luminosité appliqué à la sortie : 0.2 tamisé … 2 (les pics saturent
+    /// au maximum réel des lampes).
     public var brightness: Double
 
     public init(sensitivity: Double = 1, punch: Double = 1, flash: Double = 0.30, brightness: Double = 1) {

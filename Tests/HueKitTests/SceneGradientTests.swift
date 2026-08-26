@@ -65,6 +65,21 @@ struct SceneGradientTests {
         #expect(SceneGradient.stops(for: scene(actions: actions)).count == 5)
     }
 
+    @Test func hueAnchorsExtractHuesAndSkipNearWhites() {
+        // Rouge + bleu → deux ancres, l'une près de 0 (rouge), l'autre vers 0.6 (bleu).
+        let anchors = SceneGradient.hueAnchors(for: scene(actions: [
+            colorAction(x: 0.675, y: 0.322), // rouge
+            colorAction(x: 0.167, y: 0.040), // bleu
+        ]))
+        #expect(anchors.count == 2)
+        #expect(anchors[0] < 0.1 || anchors[0] > 0.9)
+        #expect(anchors[1] > 0.5 && anchors[1] < 0.8)
+
+        // Blanc froid (153 mirek ≈ gris clair) : teinte non significative, exclue.
+        let whites = SceneGradient.hueAnchors(for: scene(actions: [mirekAction(153)]))
+        #expect(whites.isEmpty)
+    }
+
     @Test func sceneActionsDecodeFromClipJSON() throws {
         let json = """
         {"id":"S1","metadata":{"name":"Stimulation"},"group":{"rid":"R1","rtype":"room"},

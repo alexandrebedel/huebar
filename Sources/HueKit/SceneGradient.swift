@@ -45,4 +45,20 @@ public enum SceneGradient {
         }
         return result
     }
+
+    /// Teintes (0...1) des couleurs de la scène — pour l'utiliser comme thème de la
+    /// sync musique. Les couleurs quasi grises sont exclues (teinte non significative).
+    public static func hueAnchors(for scene: HueScene) -> [Double] {
+        stops(for: scene).compactMap { stop in
+            let maxComponent = max(stop.red, stop.green, stop.blue)
+            let delta = maxComponent - min(stop.red, stop.green, stop.blue)
+            guard maxComponent > 0, delta / maxComponent > 0.25 else { return nil }
+            let hue: Double = switch maxComponent {
+            case stop.red: (stop.green - stop.blue) / delta
+            case stop.green: (stop.blue - stop.red) / delta + 2
+            default: (stop.red - stop.green) / delta + 4
+            }
+            return (hue / 6 + 1).truncatingRemainder(dividingBy: 1)
+        }
+    }
 }
