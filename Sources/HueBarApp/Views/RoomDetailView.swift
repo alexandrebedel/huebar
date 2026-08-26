@@ -10,6 +10,7 @@ struct RoomDetailView: View {
     @State private var newName = ""
     @State private var roomColor: Color = .white
     @State private var colorTask: Task<Void, Never>?
+    @State private var suppressColorSend = false
     @State private var capturing = false
     @State private var captureName = ""
 
@@ -109,7 +110,11 @@ struct RoomDetailView: View {
                         .labelsHidden()
                         .controlSize(.small)
                         .onChange(of: roomColor) { _, newValue in
-                            scheduleRoomColorSend(newValue)
+                            if suppressColorSend {
+                                suppressColorSend = false
+                            } else {
+                                scheduleRoomColorSend(newValue)
+                            }
                         }
                         .help("Couleur de la pièce")
                 }
@@ -118,12 +123,9 @@ struct RoomDetailView: View {
             .opacity(tint.isOn ? 1 : 0.35)
         }
         .hueCard(colors: tint.colors)
-        .onAppear {
-            if let xy = room.lights.first(where: { $0.on.on && $0.color != nil })?.color?.xy {
-                let rgb = HueColor.rgb(from: xy)
-                roomColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
-            }
-        }
+        .onAppear { syncSwatchFromLights() }
+        // Scène rappelée ou refresh : la pastille suit la couleur réelle de la pièce.
+        .onChange(of: room.lights) { _, _ in syncSwatchFromLights() }
         .contextMenu {
             Button("Renommer la pièce…") {
                 newName = room.name
@@ -133,6 +135,15 @@ struct RoomDetailView: View {
         .renameAlert("Renommer la pièce", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameRoom(id: room.id, name: name) }
         }
+    }
+
+    private func syncSwatchFromLights() {
+        guard let xy = room.lights.first(where: { $0.on.on && $0.color != nil })?.color?.xy else { return }
+        let rgb = HueColor.rgb(from: xy)
+        let modelColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+        guard !LightCardView.close(modelColor, roomColor) else { return }
+        suppressColorSend = true
+        roomColor = modelColor
     }
 
     /// Comme sur les lampes : le ColorPicker émet en continu, on n'envoie que la dernière valeur.

@@ -10,6 +10,7 @@ struct LightCardView: View {
     let light: Light
     @State private var color: Color = .white
     @State private var colorTask: Task<Void, Never>?
+    @State private var suppressColorSend = false
     @State private var renaming = false
     @State private var newName = ""
     @State private var gradientColors: [Color] = []
@@ -56,7 +57,11 @@ struct LightCardView: View {
                         .labelsHidden()
                         .controlSize(.small)
                         .onChange(of: color) { _, newValue in
-                            scheduleColorSend(newValue)
+                            if suppressColorSend {
+                                suppressColorSend = false
+                            } else {
+                                scheduleColorSend(newValue)
+                            }
                         }
                         .disabled(!tint.isOn)
                         .opacity(tint.isOn ? 1 : 0.4)
@@ -123,6 +128,16 @@ struct LightCardView: View {
         .renameAlert("Renommer la lampe", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameLight(roomID: roomID, lightID: light.id, name: name) }
         }
+        // Une scène (ou un refresh) change la couleur du modèle : la pastille du
+        // picker doit suivre — sans renvoyer la valeur au bridge en boucle.
+        .onChange(of: light.color) { _, newValue in
+            guard let xy = newValue?.xy else { return }
+            let rgb = HueColor.rgb(from: xy)
+            let modelColor = Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+            guard !Self.close(modelColor, color) else { return }
+            suppressColorSend = true
+            color = modelColor
+        }
         .onAppear {
             if let xy = light.color?.xy {
                 let rgb = HueColor.rgb(from: xy)
@@ -140,6 +155,15 @@ struct LightCardView: View {
                 gradientColors = Array(colors.prefix(capable))
             }
         }
+    }
+
+    /// Égalité approchée en sRGB — évite les allers-retours RGB↔xy qui divergent d'un epsilon.
+    static func close(_ first: Color, _ second: Color) -> Bool {
+        guard let a = NSColor(first).usingColorSpace(.sRGB),
+              let b = NSColor(second).usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) < 0.01
+            && abs(a.greenComponent - b.greenComponent) < 0.01
+            && abs(a.blueComponent - b.blueComponent) < 0.01
     }
 
     private var hasActiveEffect: Bool {

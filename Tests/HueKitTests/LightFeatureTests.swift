@@ -121,6 +121,7 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     fake.grouped = [GroupedLight(id: "G1", owner: ref("R1", "room"), on: OnState(on: false), dimming: nil)]
     fake.scenes = [HueScene(id: "SC1", metadata: Metadata(name: "Savane"), group: ref("R1", "room"))]
     let state = HueState(client: fake)
+    state.recallSettleDelay = .zero // pas d'attente de fade dans les tests
     await state.refresh()
     return (state, fake)
 }
@@ -214,6 +215,35 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     let plain = HueScene(id: "S2", metadata: Metadata(name: "X"), group: ResourceRef(rid: "R1", rtype: "room"))
     #expect(!plain.supportsDynamic)
     #expect(!plain.isDynamicActive)
+}
+
+@MainActor
+@Test func recallPaintsSceneEndStateLocallyDuringTheFade() async {
+    // Résidus constatés en réel : le refresh immédiat tombait pendant le fade du
+    // bridge et figeait des couleurs de l'ancienne scène. On peint l'état FINAL
+    // localement dès le clic.
+    let (state, _) = await makeGalleryState()
+    let targetXY = XY(x: 0.2, y: 0.7)
+    var scene = state.rooms[0].scenes[0]
+    scene.actions = [
+        SceneAction(action: .init(on: OnState(on: true), dimming: Dimming(brightness: 90),
+                                  color: ColorState(xy: targetXY)),
+                    target: ref("L1", "light")),
+        SceneAction(action: .init(on: OnState(on: true),
+                                  colorTemperature: ColorTemperatureState(mirek: 250)),
+                    target: ref("L3", "light")),
+        SceneAction(action: .init(on: OnState(on: false)), target: ref("L2", "light")),
+    ]
+    state.rooms[0].scenes[0] = scene
+
+    state.applySceneActionsLocally(id: "SC1")
+    #expect(state.rooms[0].lights[0].color?.xy == targetXY)
+    #expect(state.rooms[0].lights[0].colorTemperature?.mirek == nil) // passée en mode couleur
+    #expect(state.rooms[0].lights[0].dimming?.brightness == 90)
+    #expect(state.rooms[0].lights[0].on.on)
+    #expect(state.rooms[0].lights[1].on.on == false)
+    #expect(state.rooms[0].lights[2].colorTemperature?.mirek == 250)
+    #expect(state.rooms[0].isOn) // au moins une lampe allumée
 }
 
 @MainActor

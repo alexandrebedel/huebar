@@ -19,6 +19,7 @@ private func makeReadyState() async -> (HueState, FakeClient) {
         GroupedLight(id: "GH", owner: ref("BH", "bridge_home"), on: OnState(on: false), dimming: nil),
     ]
     let state = HueState(client: fake)
+    state.recallSettleDelay = .zero // pas d'attente de fade dans les tests
     await state.refresh()
     return (state, fake)
 }

@@ -154,21 +154,63 @@ public final class HueState {
         }
     }
 
+    /// Délai avant le refresh de confirmation d'un recall : le bridge FADE les lampes
+    /// (~400 ms et plus) et un fetch immédiat rapportait des couleurs à moitié
+    /// transitionnées — des « résidus » de la scène précédente figés dans l'app.
+    var recallSettleDelay: Duration = .milliseconds(1200)
+
     public func recallScene(id: String) async {
         markSceneActive(id: id) // le highlight suit le clic, le refresh confirmera
+        applySceneActionsLocally(id: id) // l'état FINAL tout de suite, sans attendre le fade
         await perform { client in
             try await client.recallScene(id: id)
         }
-        await refresh() // une scène change lampes et couleurs : on resynchronise tout
+        try? await Task.sleep(for: recallSettleDelay)
+        await refresh() // fade terminé : on resynchronise sur l'état réel
     }
 
     /// Lance la scène en mode dynamique (sa palette circule entre les lampes).
     public func recallSceneDynamic(id: String) async {
         markSceneActive(id: id, as: "dynamic_palette")
+        applySceneActionsLocally(id: id)
         await perform { client in
             try await client.recallDynamicScene(id: id)
         }
+        try? await Task.sleep(for: recallSettleDelay)
         await refresh()
+    }
+
+    /// Peint localement l'état final des actions de la scène — l'app affiche la
+    /// scène cible pendant le fade, le refresh confirmera.
+    func applySceneActionsLocally(id: String) {
+        let scene = rooms.flatMap(\.scenes).first { $0.id == id } ?? all?.scenes.first { $0.id == id }
+        guard let actions = scene?.actions, !actions.isEmpty else { return }
+        let bodiesByLightID = Dictionary(
+            actions.compactMap { action in action.target.map { ($0.rid, action.action) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for roomIndex in rooms.indices {
+            var touched = false
+            for lightIndex in rooms[roomIndex].lights.indices {
+                guard let body = bodiesByLightID[rooms[roomIndex].lights[lightIndex].id] else { continue }
+                touched = true
+                if let on = body.on {
+                    rooms[roomIndex].lights[lightIndex].on = on
+                }
+                if let dimming = body.dimming {
+                    rooms[roomIndex].lights[lightIndex].dimming = dimming
+                }
+                if let color = body.color {
+                    rooms[roomIndex].lights[lightIndex].color = color
+                    rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = nil // mode couleur
+                } else if let mirek = body.colorTemperature?.mirek {
+                    rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
+                }
+            }
+            if touched {
+                rooms[roomIndex].isOn = rooms[roomIndex].lights.contains { $0.on.on }
+            }
+        }
     }
 
     /// Vitesse du mode dynamique (0 lent ... 1 rapide), mémorisée par scène.
