@@ -93,6 +93,19 @@ struct MusicSectionView: View {
                 .help("Créer un thème")
             }
 
+            // Master de luminosité de la sync : toujours visible, persisté par mode.
+            HStack(spacing: 8) {
+                Image(systemName: "sun.min")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(value: tuningBinding(\.brightness), in: 0.2...1.5)
+                    .controlSize(.small)
+                Image(systemName: "sun.max")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Luminosité globale des lumières pendant la sync")
+
             // Réglages fins du mapper, persistés par mode — ajustables pendant la sync.
             DisclosureGroup {
                 VStack(spacing: 6) {

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import HueKit
 @testable import SyncKit
@@ -143,6 +144,34 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     let quiet = luminance(noFlash.map(frame: frame(beat: true), channels: channels, time: 0.02))
     let loud = luminance(withFlash.map(frame: frame(beat: true), channels: channels, time: 0.02))
     #expect(loud > quiet)
+}
+
+@Test func masterBrightnessScalesTheOutput() {
+    for mode in SyncMode.allCases {
+        var dim = LightMapper(mode: mode, tuning: SyncTuning(brightness: 0.2))
+        var bright = LightMapper(mode: mode, tuning: SyncTuning(brightness: 1.5))
+        var dimColors: [ChannelColor] = []
+        var brightColors: [ChannelColor] = []
+        for i in 0..<150 {
+            let time = Double(i) * 0.02
+            dimColors = dim.map(frame: frame(), channels: channels, time: time)
+            brightColors = bright.map(frame: frame(), channels: channels, time: time)
+        }
+        func luminance(_ colors: [ChannelColor]) -> Double {
+            colors.reduce(0) { $0 + $1.red + $1.green + $1.blue }
+        }
+        #expect(luminance(brightColors) > luminance(dimColors) * 1.5, "\(mode)")
+    }
+}
+
+@Test func tuningDecodesLegacyJSONWithoutNewFields() throws {
+    // Réglages persistés avant l'ajout de `brightness` : valeurs gardées, défaut pour le reste.
+    let legacy = #"{"sensitivity":1.4,"punch":0.8,"flash":0.2}"#
+    let tuning = try JSONDecoder().decode(SyncTuning.self, from: Data(legacy.utf8))
+    #expect(tuning.sensitivity == 1.4)
+    #expect(tuning.punch == 0.8)
+    #expect(tuning.flash == 0.2)
+    #expect(tuning.brightness == 1)
 }
 
 @Test func tuningUpdatesLiveWithoutStateReset() {

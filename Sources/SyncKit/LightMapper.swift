@@ -193,9 +193,9 @@ public struct LightMapper {
         return ChannelColor(channel: target.channel, red: value.red, green: value.green, blue: value.blue)
     }
 
-    /// HSV -> RGB (h, s, v dans 0...1), avec levée perceptuelle sur v.
+    /// HSV -> RGB (h, s, v dans 0...1), avec master de luminosité puis levée perceptuelle sur v.
     private func color(channel: UInt8, hue: Double, saturation: Double, value rawValue: Double) -> ChannelColor {
-        let value = pow(max(0, rawValue), Tuning.brightnessGamma)
+        let value = pow(min(1, max(0, rawValue) * tuning.brightness), Tuning.brightnessGamma)
         let h = (hue - floor(hue)) * 6
         let sector = Int(h) % 6
         let f = h - floor(h)
