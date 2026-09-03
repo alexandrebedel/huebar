@@ -239,6 +239,82 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
     }
 }
 
+@Test func autoGainMakesQuietAndLoudSourcesEquallyVisible() {
+    // Même morceau à -14 dB (source PX5 vs Mac) : après normalisation la luminosité
+    // en régime établi doit être comparable — plus de sync « morte » sur une source calme.
+    var loud = LightMapper(mode: .club)
+    var quiet = LightMapper(mode: .club)
+    var loudColors: [ChannelColor] = []
+    var quietColors: [ChannelColor] = []
+    for i in 0..<300 {
+        let time = Double(i) * 0.02
+        // Signal qui ondule (la musique n'est jamais plate) pour exercer le suivi de pic.
+        let wobble = 0.7 + 0.3 * sin(Double(i) / 7)
+        loudColors = loud.map(frame: frame(rms: 0.30 * wobble, bass: 0.50 * wobble, mid: 0.30 * wobble, high: 0.20 * wobble),
+                              channels: channels, time: time)
+        quietColors = quiet.map(frame: frame(rms: 0.06 * wobble, bass: 0.10 * wobble, mid: 0.06 * wobble, high: 0.04 * wobble),
+                                channels: channels, time: time)
+    }
+    func luminance(_ colors: [ChannelColor]) -> Double {
+        colors.reduce(0) { $0 + $1.red + $1.green + $1.blue }
+    }
+    #expect(luminance(quietColors) > luminance(loudColors) * 0.8)
+    #expect(luminance(quietColors) > 1.0) // et clairement visible, pas juste « pas nul »
+}
+
+@Test func themedChannelsShowDistinctPaletteColorsAtOnce() {
+    // Façon app Hue : avec un thème, les lampes affichent des couleurs DIFFÉRENTES en même
+    // temps (une ancre par lampe), pas une seule teinte quantifiée pour toutes.
+    var mapper = LightMapper(mode: .club, anchors: SyncTheme.neon.hueAnchors)
+    var colors: [ChannelColor] = []
+    for i in 0..<100 {
+        colors = mapper.map(frame: frame(), channels: channels, time: Double(i) * 0.02)
+    }
+    func distance(_ a: ChannelColor, _ b: ChannelColor) -> Double {
+        abs(a.red - b.red) + abs(a.green - b.green) + abs(a.blue - b.blue)
+    }
+    #expect(distance(colors[0], colors[1]) > 0.15)
+    #expect(distance(colors[1], colors[2]) > 0.15)
+}
+
+@Test func beatsRotateThePaletteBetweenLampsInClub() {
+    // Sur un beat, la couleur d'une lampe « saute » vers sa voisine (chase).
+    var mapper = LightMapper(mode: .club, anchors: [0.0, 0.33, 0.66])
+    var before: [ChannelColor] = []
+    for i in 0..<100 {
+        before = mapper.map(frame: frame(), channels: channels, time: Double(i) * 0.02)
+    }
+    var after: [ChannelColor] = []
+    for i in 100..<200 {
+        after = mapper.map(frame: frame(beat: i == 100), channels: channels, time: Double(i) * 0.02)
+    }
+    func hueOf(_ c: ChannelColor) -> Int { // secteur dominant
+        c.red >= c.green && c.red >= c.blue ? 0 : (c.green >= c.blue ? 1 : 2)
+    }
+    let beforeSectors = before.map(hueOf)
+    let afterSectors = after.map(hueOf)
+    #expect(beforeSectors != afterSectors)          // la distribution a tourné…
+    #expect(Set(beforeSectors) == Set(afterSectors)) // …mais ce sont les mêmes couleurs
+}
+
+@Test func tempoIsEstimatedFromRegularBeats() {
+    // Beats toutes les 0.5 s (120 BPM) : après quelques mesures le tempo est connu.
+    var mapper = LightMapper(mode: .club)
+    for i in 0..<400 {
+        let time = Double(i) * 0.02
+        _ = mapper.map(frame: frame(beat: i % 25 == 0), channels: channels, time: time)
+    }
+    let bpm = mapper.estimatedBPM ?? 0
+    #expect(abs(bpm - 120) < 3)
+
+    // Beats irréguliers/absents : pas de tempo affiché.
+    var quiet = LightMapper(mode: .club)
+    for i in 0..<100 {
+        _ = quiet.map(frame: frame(), channels: channels, time: Double(i) * 0.02)
+    }
+    #expect(quiet.estimatedBPM == nil)
+}
+
 @Test func silenceIsDimInBothModes() {
     for mode in SyncMode.allCases {
         var mapper = LightMapper(mode: mode)

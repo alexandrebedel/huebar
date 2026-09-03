@@ -24,6 +24,8 @@ public final class MusicSyncEngine {
     /// Dernière frame d'analyse et couleurs réellement envoyées (visualiseur).
     public private(set) var frame: AnalysisFrame = .silence
     public private(set) var lastColors: [ChannelColor] = []
+    /// Tempo estimé par le mapper (médiane des intervalles entre beats).
+    public private(set) var bpm: Double?
     /// Appelé à chaque teardown (stop manuel, erreur, déconnexion) — y compris quand
     /// aucune vue n'est à l'écran. Les consommateurs de la source (Recorder) s'y accrochent.
     public var onDidTeardown: (() -> Void)?
@@ -153,6 +155,7 @@ public final class MusicSyncEngine {
                     ? mapped
                     : mapped.map { self.heldChannels[$0.channel] ?? $0 }
                 self.lastColors = colors
+                if self.bpm != self.mapper.estimatedBPM { self.bpm = self.mapper.estimatedBPM }
                 if let configID = self.configID {
                     self.transport.send(HueStreamEncoder.frame(
                         configID: configID, sequence: sequence, channels: colors))
@@ -182,6 +185,7 @@ public final class MusicSyncEngine {
         level = 0
         frame = .silence
         lastColors = []
+        bpm = nil
         latestFrame.withLock { $0 = .silence }
         onDidTeardown?()
     }

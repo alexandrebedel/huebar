@@ -516,13 +516,18 @@ private struct SyncVisualizer: View {
                 band("High", engine.frame.high, Color(red: 0.95, green: 0.85, blue: 0.30))
             }
 
-            Circle()
-                .fill(.pink)
-                .frame(width: 12, height: 12)
-                .scaleEffect(engine.frame.beat ? 1.5 : 0.7)
-                .opacity(engine.frame.beat ? 1 : 0.35)
-                .animation(.easeOut(duration: 0.15), value: engine.frame.beat)
-                .help("Beat détecté")
+            VStack(spacing: 3) {
+                Circle()
+                    .fill(.pink)
+                    .frame(width: 12, height: 12)
+                    .scaleEffect(engine.frame.beat ? 1.5 : 0.7)
+                    .opacity(engine.frame.beat ? 1 : 0.35)
+                    .animation(.easeOut(duration: 0.15), value: engine.frame.beat)
+                Text(engine.bpm.map { "\(Int($0.rounded())) BPM" } ?? "— BPM")
+                    .font(.system(size: 8).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .help("Beat détecté et tempo estimé")
 
             // Chaleur du son (centroïde spectral) : froid à gauche, chaud à droite.
             ZStack(alignment: .leading) {
