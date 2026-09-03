@@ -187,7 +187,7 @@ struct LightCardView: View {
         if let status = light.effects?.status { status != "no_effect" } else { false }
     }
 
-    private static func effectLabel(_ effect: String) -> String {
+    static func effectLabel(_ effect: String) -> String {
         switch effect {
         case "no_effect": "Aucun effet"
         case "candle": "Bougie"

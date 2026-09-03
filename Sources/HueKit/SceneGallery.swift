@@ -25,8 +25,12 @@ public struct GalleryScenario: Identifiable, Sendable, Equatable {
     public let name: String
     public let kind: Kind
     public let brightness: Double
+    /// Effet natif demandé aux lampes qui le supportent (repli sur `candle`, puis
+    /// couleur fixe) — c'est ce qui fait scintiller « Feu de camp ».
+    public var effect: String? = nil
 
     public var id: String { name }
+    public var isAnimated: Bool { effect != nil }
 
     /// Couleurs d'aperçu pour la carte (les blancs passent par mirek -> RGB).
     public var previewColors: [RGB] {
@@ -86,6 +90,10 @@ public enum SceneGallery {
         .init(name: "Fête foraine", kind: .palette([
             .init(1, 0.25, 0.25), .init(0.25, 0.60, 1), .init(1, 0.85, 0.20), .init(0.30, 0.90, 0.45),
         ]), brightness: 90),
+        // Scintille : effet natif `fire` (repli `candle`) par-dessus une palette de braises.
+        .init(name: "Feu de camp", kind: .palette([
+            .init(1, 0.35, 0.05), .init(1, 0.18, 0.04), .init(1, 0.55, 0.12), .init(0.95, 0.12, 0.02),
+        ]), brightness: 65, effect: "fire"),
         // Recettes de blanc officielles Hue.
         .init(name: "Détente", kind: .white(mirek: 447), brightness: 56),
         .init(name: "Lecture", kind: .white(mirek: 346), brightness: 100),
@@ -105,13 +113,21 @@ public enum SceneGallery {
 
     /// Actions par lampe pour un scénario : palette distribuée en boucle sur les lampes
     /// couleur (blanc chaud pour les autres), ou température clampée au schéma de chaque
-    /// lampe pour une recette de blanc.
+    /// lampe pour une recette de blanc. L'effet natif s'ajoute sur les lampes qui le
+    /// supportent (repli `candle`), les autres gardent la couleur fixe.
     public static func actions(for scenario: GalleryScenario, lights: [Light]) -> [SceneAction] {
         var colorIndex = 0
         return lights.map { light in
             var body = SceneAction.Body(on: OnState(on: true))
             if light.dimming != nil {
                 body.dimming = Dimming(brightness: scenario.brightness)
+            }
+            if let effect = scenario.effect, let supported = light.effects?.effectValues {
+                if supported.contains(effect) {
+                    body.effects = LightEffects(effect: effect)
+                } else if supported.contains("candle") {
+                    body.effects = LightEffects(effect: "candle")
+                }
             }
             switch scenario.kind {
             case .palette(let colors):

@@ -18,6 +18,10 @@ public enum SceneCapture {
                 } else if let color = light.color {
                     body.color = color
                 }
+                // Un effet natif en cours (bougie, feu…) fait partie de l'ambiance capturée.
+                if let status = light.effects?.status, status != "no_effect" {
+                    body.effects = LightEffects(effect: status)
+                }
             }
             return SceneAction(action: body, target: ResourceRef(rid: light.id, rtype: "light"))
         }

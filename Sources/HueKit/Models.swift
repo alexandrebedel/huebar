@@ -156,19 +156,23 @@ public struct SceneAction: Codable, Sendable, Equatable {
         public var dimming: Dimming?
         public var color: ColorState?
         public var colorTemperature: ColorTemperatureState?
+        /// Effet natif (fire, candle…) rejoué par la scène — c'est lui qui scintille.
+        public var effects: LightEffects?
 
         public init(
             on: OnState? = nil, dimming: Dimming? = nil,
-            color: ColorState? = nil, colorTemperature: ColorTemperatureState? = nil
+            color: ColorState? = nil, colorTemperature: ColorTemperatureState? = nil,
+            effects: LightEffects? = nil
         ) {
             self.on = on
             self.dimming = dimming
             self.color = color
             self.colorTemperature = colorTemperature
+            self.effects = effects
         }
 
         private enum CodingKeys: String, CodingKey {
-            case on, dimming, color
+            case on, dimming, color, effects
             case colorTemperature = "color_temperature"
         }
     }
@@ -281,7 +285,8 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
     public init(applying body: SceneAction.Body) {
         self.init(
             on: body.on, dimming: body.dimming, color: body.color,
-            colorTemperature: body.colorTemperature.map { ColorTemperatureState(mirek: $0.mirek) }
+            colorTemperature: body.colorTemperature.map { ColorTemperatureState(mirek: $0.mirek) },
+            effects: body.effects.map { LightEffects(effect: $0.effect) }
         )
     }
 

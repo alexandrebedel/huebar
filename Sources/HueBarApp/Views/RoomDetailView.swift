@@ -117,6 +117,24 @@ struct RoomDetailView: View {
                     .tint(tint.foreground.opacity(0.85))
                     .help("Température de la pièce : froid ← → chaud")
                 }
+                let roomEffects = HueCardStyle.roomEffects(room)
+                if !roomEffects.isEmpty {
+                    // Effet natif sur toute la pièce (feu, bougie…), envoyé à chaque
+                    // lampe qui le supporte.
+                    Menu {
+                        ForEach(roomEffects, id: \.self) { effect in
+                            Button(LightCardView.effectLabel(effect)) {
+                                Task { await state.setRoomEffect(id: room.id, effect: effect) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(tint.foreground.opacity(roomHasActiveEffect ? 1 : 0.55))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Effet sur toute la pièce")
+                }
                 if room.lights.contains(where: { $0.color != nil }) {
                     ColorPicker("", selection: $roomColor, supportsOpacity: false)
                         .labelsHidden()
@@ -149,6 +167,12 @@ struct RoomDetailView: View {
         }
         .renameAlert("Renommer la pièce", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameRoom(id: room.id, name: name) }
+        }
+    }
+
+    private var roomHasActiveEffect: Bool {
+        room.lights.contains { light in
+            if let status = light.effects?.status { status != "no_effect" } else { false }
         }
     }
 

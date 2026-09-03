@@ -116,6 +116,17 @@ private struct GalleryCard: View {
         .frame(height: 84)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.12)))
+        .overlay(alignment: .topTrailing) {
+            if scenario.isAnimated {
+                Image(systemName: "flame.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(4)
+                    .background(.black.opacity(0.3), in: Circle())
+                    .padding(6)
+                    .help("Scintille (effet natif des lampes)")
+            }
+        }
         .scaleEffect(hovering ? 1.03 : 1)
         .animation(.easeOut(duration: 0.12), value: hovering)
         .onHover { hovering = $0 }

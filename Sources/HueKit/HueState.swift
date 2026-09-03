@@ -310,6 +310,33 @@ public final class HueState {
         }
     }
 
+    /// Effet natif sur toute la pièce : le grouped_light ne porte pas `effects`, on
+    /// l'envoie à chaque lampe qui le supporte (les autres sont laissées telles quelles).
+    public func setRoomEffect(id: String, effect: String) async {
+        guard let roomIndex = rooms.firstIndex(where: { $0.id == id }) else { return }
+        var targets: [String] = []
+        for lightIndex in rooms[roomIndex].lights.indices {
+            guard rooms[roomIndex].lights[lightIndex].effects?.effectValues?.contains(effect) == true
+            else { continue }
+            rooms[roomIndex].lights[lightIndex].effects?.status = effect
+            if effect != "no_effect" {
+                rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
+            }
+            targets.append(rooms[roomIndex].lights[lightIndex].id)
+        }
+        guard !targets.isEmpty else { return }
+        if effect != "no_effect" { rooms[roomIndex].isOn = true }
+        await perform { client in
+            for lightID in targets {
+                try await client.updateLight(
+                    id: lightID,
+                    LightUpdate(on: effect == "no_effect" ? nil : OnState(on: true),
+                                effects: LightEffects(effect: effect))
+                )
+            }
+        }
+    }
+
     public func setLightEffect(roomID: String, lightID: String, effect: String) async {
         guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
         rooms[roomIndex].lights[lightIndex].effects?.status = effect
@@ -341,6 +368,9 @@ public final class HueState {
             }
             if let mirek = action.action.colorTemperature?.mirek {
                 rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
+            }
+            if let effect = action.action.effects?.effect {
+                rooms[roomIndex].lights[lightIndex].effects?.status = effect
             }
         }
         rooms[roomIndex].isOn = true

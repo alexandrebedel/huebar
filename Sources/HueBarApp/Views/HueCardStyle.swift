@@ -45,6 +45,20 @@ enum HueCardStyle {
         return Double(lower)...Double(upper)
     }
 
+    /// Effets natifs proposés au niveau pièce : union de ceux des lampes, dans l'ordre
+    /// d'apparition, « no_effect » en tête. Vide si aucune lampe n'a d'effets.
+    static func roomEffects(_ room: RoomModel) -> [String] {
+        var seen = Set<String>()
+        var effects: [String] = []
+        for effect in room.lights.flatMap({ $0.effects?.effectValues ?? [] }) where !seen.contains(effect) {
+            seen.insert(effect)
+            effects.append(effect)
+        }
+        let others = effects.filter { $0 != "no_effect" }
+        guard !others.isEmpty else { return [] }
+        return ["no_effect"] + others
+    }
+
     /// Mirek moyen des lampes CT allumées — la valeur du slider de température de pièce.
     static func averageMirek(_ room: RoomModel) -> Double {
         let mireks = room.lights.filter { $0.on.on }.compactMap { $0.colorTemperature?.mirek }

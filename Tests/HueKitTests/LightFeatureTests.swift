@@ -315,6 +315,52 @@ private func makeGalleryState() async -> (HueState, FakeClient) {
     #expect(fake.createdScenes[0].actions.count == 3)
 }
 
+@Test func campfireScenarioUsesNativeFireWithCandleFallback() throws {
+    let campfire = try #require(SceneGallery.scenarios.first { $0.name == "Feu de camp" })
+    #expect(campfire.isAnimated)
+    var candleOnly = colorLight(id: "L2", device: "D2")
+    candleOnly.effects = LightEffects(effectValues: ["no_effect", "candle"], status: "no_effect")
+    var fireCapable = colorLight()
+    fireCapable.effects = LightEffects(effectValues: ["no_effect", "candle", "fire"], status: "no_effect")
+
+    let actions = SceneGallery.actions(for: campfire, lights: [fireCapable, candleOnly, whiteLight()])
+    #expect(actions[0].action.effects?.effect == "fire")
+    #expect(actions[1].action.effects?.effect == "candle") // pas de fire : repli bougie
+    #expect(actions[2].action.effects == nil)               // lampe sans effets : couleur fixe
+    #expect(actions[0].action.color != nil)                 // la palette reste (aperçu + lampes sans effet)
+
+    // Le PUT direct (« Appliquer ») et l'encodage de scène portent bien l'effet.
+    #expect(LightUpdate(applying: actions[0].action).effects?.effect == "fire")
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let json = String(data: try encoder.encode(actions[0].action), encoding: .utf8) ?? ""
+    #expect(json.contains(#""effects":{"effect":"fire"}"#))
+}
+
+@MainActor
+@Test func setRoomEffectFansOutToSupportingLightsOnly() async {
+    let (state, fake) = await makeGalleryState()
+    // L1 et L2 supportent candle/prism (fixture), L3 (blanche) n'a pas d'effets.
+    await state.setRoomEffect(id: "R1", effect: "candle")
+    #expect(fake.lightUpdates.map(\.id) == ["L1", "L2"])
+    #expect(fake.lightUpdates.allSatisfy { $0.update.effects?.effect == "candle" })
+    #expect(state.rooms[0].lights[0].effects?.status == "candle")
+    #expect(state.rooms[0].lights[0].on.on)
+    #expect(state.rooms[0].isOn)
+
+    // Effet non supporté par aucune lampe : rien n'est envoyé.
+    await state.setRoomEffect(id: "R1", effect: "fire")
+    #expect(fake.lightUpdates.count == 2)
+}
+
+@Test func captureKeepsActiveNativeEffect() {
+    var candle = colorLight()
+    candle.on = OnState(on: true)
+    candle.effects?.status = "candle"
+    let actions = SceneCapture.actions(from: [candle])
+    #expect(actions[0].action.effects?.effect == "candle")
+}
+
 @MainActor
 @Test func setRoomColorTintsColorLightsAndSendsOneGroupedPut() async {
     let (state, fake) = await makeGalleryState()
