@@ -171,9 +171,7 @@ struct RoomDetailView: View {
     }
 
     private var roomHasActiveEffect: Bool {
-        room.lights.contains { light in
-            if let status = light.effects?.status { status != "no_effect" } else { false }
-        }
+        room.lights.contains { $0.activeEffect != nil }
     }
 
     /// Couleur de référence de la pièce : première lampe couleur allumée.

@@ -16,6 +16,12 @@ public enum SceneGradient {
         }
     }
 
+    /// Couleur naturelle des effets non teintés, pour l'aperçu des cartes.
+    static let naturalEffectColors: [String: Stop] = [
+        "candle": Stop(red: 1.0, green: 0.62, blue: 0.22),
+        "fire": Stop(red: 1.0, green: 0.40, blue: 0.08),
+    ]
+
     /// Stops dans l'ordre des actions du bridge (stable), lampes éteintes ignorées,
     /// doublons consécutifs fusionnés, plafonné à 5. Blanc chaud si rien d'exploitable.
     public static func stops(for scene: HueScene) -> [Stop] {
@@ -24,13 +30,18 @@ public enum SceneGradient {
             let body = sceneAction.action
             if body.on?.on == false { continue }
 
+            // Une action à effet n'a pas de `color` (refus du bridge) : sa teinte vit dans
+            // les paramètres de l'effet, ou c'est la couleur naturelle de l'effet.
+            let effectParameters = body.effectsV2?.action?.parameters
             let stop: Stop?
-            if let xy = body.color?.xy {
+            if let xy = body.color?.xy ?? effectParameters?.color?.xy {
                 let rgb = HueColor.rgb(from: xy)
                 stop = Stop(red: rgb.red, green: rgb.green, blue: rgb.blue)
-            } else if let mirek = body.colorTemperature?.mirek {
+            } else if let mirek = body.colorTemperature?.mirek ?? effectParameters?.colorTemperature?.mirek {
                 let rgb = HueColor.rgb(fromMirek: mirek)
                 stop = Stop(red: rgb.red, green: rgb.green, blue: rgb.blue)
+            } else if let effect = body.effectName {
+                stop = naturalEffectColors[effect]
             } else {
                 stop = nil
             }

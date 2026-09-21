@@ -58,10 +58,18 @@ public struct Light: Codable, Identifiable, Sendable, Equatable {
     public var colorTemperature: ColorTemperatureState?
     public var effects: LightEffects?
     public var gradient: GradientState?
+    public var effectsV2: LightEffectsV2?
 
     private enum CodingKeys: String, CodingKey {
         case id, metadata, on, dimming, color, owner, effects, gradient
         case colorTemperature = "color_temperature"
+        case effectsV2 = "effects_v2"
+    }
+
+    /// Effet en cours (v2 prioritaire : c'est lui qui porte couleur et vitesse), nil si aucun.
+    public var activeEffect: String? {
+        let effect = effectsV2?.status?.effect ?? effects?.status
+        return effect == "no_effect" ? nil : effect
     }
 }
 
@@ -122,6 +130,100 @@ public struct LightEffects: Codable, Sendable, Equatable {
     }
 }
 
+/// Effets « v2 » : même catalogue que `effects`, mais l'effet accepte une couleur (ou une
+/// température) et une vitesse — une bougie rouge sang plutôt qu'orange. En GET, `action`
+/// ne porte que `effect_values` et `status` l'effet en cours avec ses paramètres ; en
+/// PUT/POST on envoie `action.effect` + `action.parameters`.
+/// RÈGLE DU BRIDGE (vérifiée en réel) : un effet — v1 comme v2 — ne se combine PAS avec
+/// `color`/`color_temperature`/`gradient` dans la même action ; la couleur d'un effet
+/// passe par `parameters`.
+public struct LightEffectsV2: Codable, Sendable, Equatable {
+    public struct Temperature: Codable, Sendable, Equatable {
+        public var mirek: Int?
+        public var mirekValid: Bool?
+
+        public init(mirek: Int?, mirekValid: Bool? = nil) {
+            self.mirek = mirek
+            self.mirekValid = mirekValid
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case mirek
+            case mirekValid = "mirek_valid"
+        }
+    }
+
+    public struct Parameters: Codable, Sendable, Equatable {
+        public var color: ColorState?
+        public var colorTemperature: Temperature?
+        public var speed: Double?
+
+        public init(color: ColorState? = nil, colorTemperature: Temperature? = nil, speed: Double? = nil) {
+            self.color = color
+            self.colorTemperature = colorTemperature
+            self.speed = speed
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case color, speed
+            case colorTemperature = "color_temperature"
+        }
+    }
+
+    public struct Action: Codable, Sendable, Equatable {
+        public var effect: String?
+        public var parameters: Parameters?
+        public var effectValues: [String]?
+
+        public init(effect: String?, parameters: Parameters? = nil, effectValues: [String]? = nil) {
+            self.effect = effect
+            self.parameters = parameters
+            self.effectValues = effectValues
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case effect, parameters
+            case effectValues = "effect_values"
+        }
+    }
+
+    public struct Status: Codable, Sendable, Equatable {
+        public var effect: String?
+        public var effectValues: [String]?
+        public var parameters: Parameters?
+
+        public init(effect: String?, effectValues: [String]? = nil, parameters: Parameters? = nil) {
+            self.effect = effect
+            self.effectValues = effectValues
+            self.parameters = parameters
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case effect, parameters
+            case effectValues = "effect_values"
+        }
+    }
+
+    public var action: Action?
+    public var status: Status?
+
+    public init(action: Action? = nil, status: Status? = nil) {
+        self.action = action
+        self.status = status
+    }
+
+    /// Commande d'effet prête à envoyer (PUT lampe ou action de scène).
+    public init(effect: String, color: ColorState? = nil, speed: Double? = nil) {
+        let parameters = (color == nil && speed == nil) ? nil : Parameters(color: color, speed: speed)
+        self.init(action: Action(effect: effect, parameters: parameters))
+    }
+
+    /// Effets que la lampe sait jouer en v2 (présents côté `action` ou `status` selon le firmware).
+    public var supportedEffects: [String] {
+        action?.effectValues ?? status?.effectValues ?? []
+    }
+}
+
 /// Bandeau gradient (Lightstrip, Play gradient…) : points de couleur répartis sur
 /// la longueur. En GET `points` = état courant et `points_capable` = maximum ;
 /// en PUT seuls les points sont envoyés.
@@ -157,23 +259,33 @@ public struct SceneAction: Codable, Sendable, Equatable {
         public var color: ColorState?
         public var colorTemperature: ColorTemperatureState?
         /// Effet natif (fire, candle…) rejoué par la scène — c'est lui qui scintille.
+        /// Jamais avec `color`/`colorTemperature` dans la même action (refus du bridge).
         public var effects: LightEffects?
+        /// Effet teinté (couleur + vitesse dans ses paramètres), même règle d'exclusion.
+        public var effectsV2: LightEffectsV2?
 
         public init(
             on: OnState? = nil, dimming: Dimming? = nil,
             color: ColorState? = nil, colorTemperature: ColorTemperatureState? = nil,
-            effects: LightEffects? = nil
+            effects: LightEffects? = nil, effectsV2: LightEffectsV2? = nil
         ) {
             self.on = on
             self.dimming = dimming
             self.color = color
             self.colorTemperature = colorTemperature
             self.effects = effects
+            self.effectsV2 = effectsV2
+        }
+
+        /// L'action joue un effet (v1 ou v2) plutôt qu'un état fixe.
+        public var effectName: String? {
+            effectsV2?.action?.effect ?? effects?.effect
         }
 
         private enum CodingKeys: String, CodingKey {
             case on, dimming, color, effects
             case colorTemperature = "color_temperature"
+            case effectsV2 = "effects_v2"
         }
     }
 
@@ -267,11 +379,12 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
     public var colorTemperature: ColorTemperatureState?
     public var effects: LightEffects?
     public var gradient: GradientState?
+    public var effectsV2: LightEffectsV2?
 
     public init(
         on: OnState? = nil, dimming: Dimming? = nil, color: ColorState? = nil,
         colorTemperature: ColorTemperatureState? = nil, effects: LightEffects? = nil,
-        gradient: GradientState? = nil
+        gradient: GradientState? = nil, effectsV2: LightEffectsV2? = nil
     ) {
         self.on = on
         self.dimming = dimming
@@ -279,6 +392,7 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
         self.colorTemperature = colorTemperature
         self.effects = effects
         self.gradient = gradient
+        self.effectsV2 = effectsV2
     }
 
     /// L'état qu'applique une action de scène, converti en PUT direct sur la lampe.
@@ -286,7 +400,8 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
         self.init(
             on: body.on, dimming: body.dimming, color: body.color,
             colorTemperature: body.colorTemperature.map { ColorTemperatureState(mirek: $0.mirek) },
-            effects: body.effects.map { LightEffects(effect: $0.effect) }
+            effects: body.effects.map { LightEffects(effect: $0.effect) },
+            effectsV2: body.effectsV2
         )
     }
 
@@ -301,10 +416,17 @@ public struct LightUpdate: Encodable, Sendable, Equatable {
             // En PUT le bridge refuse points_capable : seuls les points partent.
             try container.encode(GradientState(points: gradient.points), forKey: .gradient)
         }
+        if let action = effectsV2?.action {
+            // Seule la commande part : ni `status` ni `effect_values` (lecture seule).
+            try container.encode(
+                LightEffectsV2(action: .init(effect: action.effect, parameters: action.parameters)),
+                forKey: .effectsV2)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
         case on, dimming, color, effects, gradient
         case colorTemperature = "color_temperature"
+        case effectsV2 = "effects_v2"
     }
 }

@@ -120,6 +120,7 @@ public final class HueState {
         guard let index = rooms.firstIndex(where: { $0.id == id }),
               let groupedID = rooms[index].groupedLightID else { return }
         let xy = HueColor.xy(red: red, green: green, blue: blue)
+        let running = takeActiveEffects(roomIndex: index)
         rooms[index].isOn = true
         for lightIndex in rooms[index].lights.indices {
             rooms[index].lights[lightIndex].on = OnState(on: true)
@@ -128,6 +129,7 @@ public final class HueState {
             }
         }
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.updateGroupedLight(
                 id: groupedID,
                 LightUpdate(on: OnState(on: true), color: ColorState(xy: xy))
@@ -139,6 +141,7 @@ public final class HueState {
     public func setRoomTemperature(id: String, mirek: Int) async {
         guard let index = rooms.firstIndex(where: { $0.id == id }),
               let groupedID = rooms[index].groupedLightID else { return }
+        let running = takeActiveEffects(roomIndex: index)
         rooms[index].isOn = true
         for lightIndex in rooms[index].lights.indices {
             rooms[index].lights[lightIndex].on = OnState(on: true)
@@ -147,6 +150,7 @@ public final class HueState {
             }
         }
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.updateGroupedLight(
                 id: groupedID,
                 LightUpdate(on: OnState(on: true), colorTemperature: ColorTemperatureState(mirek: mirek))
@@ -161,8 +165,9 @@ public final class HueState {
 
     public func recallScene(id: String) async {
         markSceneActive(id: id) // le highlight suit le clic, le refresh confirmera
-        applySceneActionsLocally(id: id) // l'état FINAL tout de suite, sans attendre le fade
+        let running = applySceneActionsLocally(id: id) // l'état FINAL tout de suite, sans attendre le fade
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.recallScene(id: id)
         }
         try? await Task.sleep(for: recallSettleDelay)
@@ -172,8 +177,9 @@ public final class HueState {
     /// Lance la scène en mode dynamique (sa palette circule entre les lampes).
     public func recallSceneDynamic(id: String) async {
         markSceneActive(id: id, as: "dynamic_palette")
-        applySceneActionsLocally(id: id)
+        let running = applySceneActionsLocally(id: id)
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.recallDynamicScene(id: id)
         }
         try? await Task.sleep(for: recallSettleDelay)
@@ -181,10 +187,13 @@ public final class HueState {
     }
 
     /// Peint localement l'état final des actions de la scène — l'app affiche la
-    /// scène cible pendant le fade, le refresh confirmera.
-    func applySceneActionsLocally(id: String) {
+    /// scène cible pendant le fade, le refresh confirmera. Renvoie les lampes qu'un effet
+    /// animait et que la scène fige : leur effet est à couper avant le recall.
+    @discardableResult
+    func applySceneActionsLocally(id: String) -> [String] {
         let scene = rooms.flatMap(\.scenes).first { $0.id == id } ?? all?.scenes.first { $0.id == id }
-        guard let actions = scene?.actions, !actions.isEmpty else { return }
+        guard let actions = scene?.actions, !actions.isEmpty else { return [] }
+        var effectsToStop: [String] = []
         let bodiesByLightID = Dictionary(
             actions.compactMap { action in action.target.map { ($0.rid, action.action) } },
             uniquingKeysWith: { first, _ in first }
@@ -206,11 +215,19 @@ public final class HueState {
                 } else if let mirek = body.colorTemperature?.mirek {
                     rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
                 }
+                if let effect = body.effectName {
+                    markEffectLocally(effect, roomIndex: roomIndex, lightIndex: lightIndex,
+                                      tint: body.effectsV2?.action?.parameters?.color)
+                } else if rooms[roomIndex].lights[lightIndex].activeEffect != nil {
+                    effectsToStop.append(rooms[roomIndex].lights[lightIndex].id)
+                    markEffectLocally("no_effect", roomIndex: roomIndex, lightIndex: lightIndex)
+                }
             }
             if touched {
                 rooms[roomIndex].isOn = rooms[roomIndex].lights.contains { $0.on.on }
             }
         }
+        return effectsToStop
     }
 
     /// Vitesse du mode dynamique (0 lent ... 1 rapide), mémorisée par scène.
@@ -269,9 +286,11 @@ public final class HueState {
     public func setLightColor(roomID: String, lightID: String, red: Double, green: Double, blue: Double) async {
         guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
         let xy = HueColor.xy(red: red, green: green, blue: blue)
+        let running = takeActiveEffects(roomIndex: roomIndex, only: [lightID])
         rooms[roomIndex].lights[lightIndex].color = ColorState(xy: xy)
         rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.updateLight(
                 id: lightID,
                 LightUpdate(on: OnState(on: true), color: ColorState(xy: xy))
@@ -281,9 +300,11 @@ public final class HueState {
 
     public func setLightTemperature(roomID: String, lightID: String, mirek: Int) async {
         guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
+        let running = takeActiveEffects(roomIndex: roomIndex, only: [lightID])
         rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
         rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             try await client.updateLight(
                 id: lightID,
                 LightUpdate(on: OnState(on: true), colorTemperature: ColorTemperatureState(mirek: mirek))
@@ -318,7 +339,7 @@ public final class HueState {
         for lightIndex in rooms[roomIndex].lights.indices {
             guard rooms[roomIndex].lights[lightIndex].effects?.effectValues?.contains(effect) == true
             else { continue }
-            rooms[roomIndex].lights[lightIndex].effects?.status = effect
+            markEffectLocally(effect, roomIndex: roomIndex, lightIndex: lightIndex)
             if effect != "no_effect" {
                 rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
             }
@@ -339,7 +360,7 @@ public final class HueState {
 
     public func setLightEffect(roomID: String, lightID: String, effect: String) async {
         guard let (roomIndex, lightIndex) = lightIndices(roomID: roomID, lightID: lightID) else { return }
-        rooms[roomIndex].lights[lightIndex].effects?.status = effect
+        markEffectLocally(effect, roomIndex: roomIndex, lightIndex: lightIndex)
         if effect != "no_effect" {
             rooms[roomIndex].lights[lightIndex].on = OnState(on: true)
         }
@@ -355,6 +376,10 @@ public final class HueState {
     public func applyScenario(roomID: String, _ scenario: GalleryScenario) async {
         guard let roomIndex = rooms.firstIndex(where: { $0.id == roomID }) else { return }
         let actions = SceneGallery.actions(for: scenario, lights: rooms[roomIndex].lights)
+        // Lampes animées par un effet que ce scénario fige sur un état fixe : leur effet
+        // est à couper avant (les lampes qui reçoivent un nouvel effet le remplacent d'office).
+        let frozen = Set(actions.filter { $0.action.effectName == nil }.compactMap { $0.target?.rid })
+        let running = takeActiveEffects(roomIndex: roomIndex, only: frozen)
         for action in actions {
             guard let lightID = action.target?.rid,
                   let lightIndex = rooms[roomIndex].lights.firstIndex(where: { $0.id == lightID })
@@ -369,12 +394,14 @@ public final class HueState {
             if let mirek = action.action.colorTemperature?.mirek {
                 rooms[roomIndex].lights[lightIndex].colorTemperature?.mirek = mirek
             }
-            if let effect = action.action.effects?.effect {
-                rooms[roomIndex].lights[lightIndex].effects?.status = effect
+            if let effect = action.action.effectName {
+                markEffectLocally(effect, roomIndex: roomIndex, lightIndex: lightIndex,
+                                  tint: action.action.effectsV2?.action?.parameters?.color)
             }
         }
         rooms[roomIndex].isOn = true
         await perform { client in
+            try await Self.stopEffects(on: running, with: client)
             for action in actions {
                 guard let lightID = action.target?.rid else { continue }
                 try await client.updateLight(id: lightID, LightUpdate(applying: action.action))
@@ -452,6 +479,45 @@ public final class HueState {
         }
         await perform { client in
             try await client.renameScene(id: id, name: name)
+        }
+    }
+
+    // MARK: - Effets (reflet local et arrêt)
+
+    /// Reflet local d'un effet, en v1 ET en v2 (l'UI lit `activeEffect`, v2 en priorité) ;
+    /// un effet teinté colore aussi la carte de la lampe.
+    private func markEffectLocally(_ effect: String, roomIndex: Int, lightIndex: Int, tint: ColorState? = nil) {
+        rooms[roomIndex].lights[lightIndex].effects?.status = effect
+        if rooms[roomIndex].lights[lightIndex].effectsV2 != nil {
+            if rooms[roomIndex].lights[lightIndex].effectsV2?.status == nil {
+                rooms[roomIndex].lights[lightIndex].effectsV2?.status = .init(effect: effect)
+            } else {
+                rooms[roomIndex].lights[lightIndex].effectsV2?.status?.effect = effect
+            }
+        }
+        if let tint {
+            rooms[roomIndex].lights[lightIndex].color = tint
+        }
+    }
+
+    /// Lampes de la pièce dont un effet tourne (toutes, ou seulement `only`) : les marque
+    /// localement comme arrêtées et renvoie leurs ids, à passer à `stopEffects`.
+    private func takeActiveEffects(roomIndex: Int, only lightIDs: Set<String>? = nil) -> [String] {
+        var running: [String] = []
+        for lightIndex in rooms[roomIndex].lights.indices {
+            let light = rooms[roomIndex].lights[lightIndex]
+            guard light.activeEffect != nil, lightIDs?.contains(light.id) ?? true else { continue }
+            running.append(light.id)
+            markEffectLocally("no_effect", roomIndex: roomIndex, lightIndex: lightIndex)
+        }
+        return running
+    }
+
+    /// Coupe les effets AVANT d'envoyer un état fixe, dans des PUT à part : le bridge
+    /// refuse effet + couleur dans un même PUT, et un effet qui tourne masque la couleur.
+    private static func stopEffects(on lightIDs: [String], with client: any HueControlling) async throws {
+        for lightID in lightIDs {
+            try await client.updateLight(id: lightID, LightUpdate(effects: LightEffects(effect: "no_effect")))
         }
     }
 

@@ -183,9 +183,7 @@ struct LightCardView: View {
             && abs(a.blueComponent - b.blueComponent) < 0.02
     }
 
-    private var hasActiveEffect: Bool {
-        if let status = light.effects?.status { status != "no_effect" } else { false }
-    }
+    private var hasActiveEffect: Bool { light.activeEffect != nil }
 
     static func effectLabel(_ effect: String) -> String {
         switch effect {

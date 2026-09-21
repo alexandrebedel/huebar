@@ -8,6 +8,8 @@ struct GalleryView: View {
     let roomID: String
     @Environment(\.dismiss) private var dismiss
     @State private var savedNames: Set<String> = []
+    /// Rayon affiché ; nil = tout.
+    @State private var category: GalleryScenario.Category?
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)]
 
@@ -31,6 +33,21 @@ struct GalleryView: View {
             Text("Clic : appliquer aux lampes · ⊕ : ajouter comme scène · ⊖ : retirer")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Picker("", selection: $category) {
+                Text("Tout").tag(GalleryScenario.Category?.none)
+                ForEach(GalleryScenario.Category.allCases) { category in
+                    Text(category.title).tag(GalleryScenario.Category?.some(category))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if category == .horror {
+                Label("Tamisées pour regarder un film. Pour que les lampes réagissent au son : "
+                      + "Musique & REC → mode « Film d'horreur ».",
+                      systemImage: "popcorn.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     // Les scénarios pas encore dans la pièce d'abord.
@@ -67,12 +84,17 @@ struct GalleryView: View {
         }
     }
 
+    private var visibleScenarios: [GalleryScenario] {
+        guard let category else { return SceneGallery.scenarios }
+        return SceneGallery.scenarios.filter { $0.category == category }
+    }
+
     private var pendingScenarios: [GalleryScenario] {
-        SceneGallery.scenarios.filter { !isSaved($0) }
+        visibleScenarios.filter { !isSaved($0) }
     }
 
     private var addedScenarios: [GalleryScenario] {
-        SceneGallery.scenarios.filter { isSaved($0) }
+        visibleScenarios.filter { isSaved($0) }
     }
 
     private func isSaved(_ scenario: GalleryScenario) -> Bool {
