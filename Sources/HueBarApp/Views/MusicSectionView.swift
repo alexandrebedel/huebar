@@ -54,9 +54,10 @@ struct MusicSectionView: View {
                 }
             }
             if engine.mode == .horror {
-                Text("Pour un film : la pièce reste sombre, rougeoie avec les grondements et éclate "
-                     + "en éclair blanc sur les sursauts (dosable avec « Flash » dans les réglages fins, "
-                     + "0 = aucun éclair). Thème Spectre = rouges sang ; tout autre thème impose ses couleurs.")
+                Text("Pour un film : la pièce reste sombre et ignore les dialogues ; elle rougeoie sur ce qui "
+                     + "menace (grondements tenus, cordes stridentes, montées sonores) et éclate en éclair blanc "
+                     + "sur les sursauts (dosable avec « Flash » dans les réglages fins, 0 = aucun éclair). "
+                     + "Thème Spectre = rouges sang ; tout autre thème impose ses couleurs.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

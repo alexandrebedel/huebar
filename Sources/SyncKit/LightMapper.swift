@@ -17,25 +17,42 @@ public struct SyncChannel: Sendable, Equatable {
 /// ramener dans 0...1 quel que soit le volume de la source — le principe du `mel_gain`
 /// de LedFx. Sans ça, un morceau calme est éteint et un morceau fort sature.
 struct AutoGain: Sendable {
-    private let decaySeconds: Double
-    private let floor: Double
-    private var peak: Double
-
-    init(decaySeconds: Double = LightMapper.Tuning.gainDecaySeconds,
-         floor: Double = LightMapper.Tuning.gainFloor) {
-        self.decaySeconds = decaySeconds
-        self.floor = floor
-        self.peak = floor
-    }
+    private var peak = LightMapper.Tuning.gainFloor
 
     mutating func normalize(_ value: Double, dt: Double) -> Double {
         if value > peak {
             peak = value
         } else {
-            peak += (value - peak) * min(1, dt / decaySeconds)
+            peak += (value - peak) * min(1, dt / LightMapper.Tuning.gainDecaySeconds)
         }
-        peak = max(peak, floor)
+        peak = max(peak, LightMapper.Tuning.gainFloor)
         return min(1, value / peak)
+    }
+}
+
+/// Niveau qu'un signal TIENT sur une fenêtre de temps (quantile bas glissant ; 0 = minimum
+/// strict) : ce qui dure passe, ce qui retombe est effacé. C'est ce qui sépare un grondement
+/// d'une voix grave, dont le fondamental pèse autant dans la bande des basses mais retombe
+/// entre les syllabes. Un quantile (plutôt que le minimum) tolère un grondement qui pulse.
+struct SustainTracker: Sendable {
+    private let window: Double
+    private let quantile: Double
+    private var samples: [(time: Double, value: Double)] = []
+    private var startTime: Double?
+
+    init(window: Double, quantile: Double) {
+        self.window = window
+        self.quantile = quantile
+    }
+
+    mutating func push(_ value: Double, at time: Double) -> Double {
+        if startTime == nil { startTime = time }
+        samples.append((time, value))
+        samples.removeAll { $0.time <= time - window }
+        // Tant que la fenêtre n'est pas remplie, rien n'a encore « tenu ».
+        guard let startTime, time - startTime >= window else { return 0 }
+        let sorted = samples.map(\.value).sorted()
+        return sorted[min(sorted.count - 1, Int(Double(sorted.count) * quantile))]
     }
 }
 
@@ -84,34 +101,66 @@ public struct LightMapper {
         static let chillWarmthPullPerSecond = 0.25
         static let chillRotationSeconds = 10.0
 
-        // Film d'horreur : la pièce reste sombre, gronde en rouge avec la bande-son et
-        // éclate en éclair blanc sur les sursauts. Pas de tempo : un film n'a pas de beat.
-        static let horrorGainDecaySeconds = 90.0   // auto-gain LENT : un passage calme reste sombre
-        static let horrorLevelGainFloor = 0.10     // le niveau ne se normalise pas sur du murmure
-        static let horrorBandSmoothingRate = 5.0
+        // Film d'horreur : la pièce reste sombre, rougeoie sur ce qui MENACE et éclate en
+        // éclair blanc sur les sursauts — sans jamais suivre les dialogues. Tout est mesuré
+        // sur le signal BRUT (pas d'auto-gain : il finit par normaliser… les voix elles-mêmes).
+        // Calibré sur de la vraie parole passée dans l'analyseur : une voix d'homme pèse
+        // 0.40 (p90) à 0.58 (max) dans la bande des basses, autant qu'un grondement modéré.
         static let horrorBaseBrightness = 0.035
-        static let horrorDreadGain = 0.45          // lueur qui suit le niveau sonore…
-        static let horrorDreadCurve = 1.6          // …en courbe : les niveaux faibles restent très sombres
-        static let horrorRumbleGain = 0.30         // + la bande propre à la lampe (grondements, cris)
+        static let horrorLevelSmoothingRate = 5.0    // 1/s, lissage du niveau brut
         static let horrorSaturation = 0.95
-        static let horrorFlickerDepth = 0.25       // vacillement d'inquiétude, par lampe
+        static let horrorFlickerDepth = 0.25         // vacillement d'inquiétude, par lampe
         static let horrorRotationSeconds = 20.0
         static let horrorAttack = 0.03, horrorRelease = 0.45
         /// Rouges sang et un violet profond ; remplacés par les ancres d'un thème s'il y en a un.
         static let horrorDefaultAnchors = [0.0, 0.97, 0.02, 0.80]
-        // Sursaut (jump scare) : niveau proche des pics du film ET bond net au-dessus de
-        // l'ambiance récente. L'ambiance rattrape le sursaut d'un coup : une scène bruyante
-        // qui dure ne re-déclenche pas (jamais de stroboscope), et le réfractaire borne à ~2 Hz.
-        static let horrorShockLevel = 0.6          // fraction du pic récent
-        static let horrorShockRatio = 2.4          // niveau instantané / ambiance
-        static let horrorShockRefractory = 0.45    // s
+
+        // Référence « niveau de programme » ≈ dialogues forts : monte en ~10 s, redescend en
+        // ~30 s, et les pauses (sous une fraction de la référence) ne l'abaissent pas — sinon
+        // chaque reprise de parole après un silence ressemblerait à un sursaut. Elle DÉMARRE
+        // haut : tant qu'elle n'a pas appris le film, un dialogue fort ne doit rien allumer.
+        static let horrorProgramInitial = 0.10
+        static let horrorProgramFloor = 0.04
+        static let horrorProgramRiseSeconds = 10.0
+        static let horrorProgramFallSeconds = 30.0
+        static let horrorProgramPauseFraction = 0.2
+
+        // Tension : niveau lissé nettement AU-DESSUS du programme. Mesuré : en régime établi
+        // la parole (homme, femme, 100 % voisée, de 0.07 à 0.16) plafonne à 1.17× le programme.
+        static let horrorTensionKneeLow = 1.8, horrorTensionKneeHigh = 5.0
+        static let horrorTensionGain = 0.50
+        // Grondement : basses « pures » (une voix a toujours des mids proportionnels à ses
+        // basses, un grondement non) et TENUES. Mesuré sur basses − 1.3 × mids, quantile 25 %
+        // sur 0.6 s : parole normale ≤ 0.002, pire cas (100 % voisé, fort) 0.147 ; un drone qui
+        // pulse garde 0.51 seul et 0.40 SOUS un dialogue (le minimum strict le ratait).
+        static let horrorVoiceMidFactor = 1.3
+        static let horrorRumbleSustainSeconds = 0.6
+        static let horrorRumbleHeldQuantile = 0.25
+        static let horrorRumbleGateLow = 0.20, horrorRumbleGateHigh = 0.80
+        static let horrorRumbleGain = 0.45
+        static let horrorRumbleOnStridentLamps = 0.6 // les lampes « aigus » grondent moins
+        // Stridence : aigus tenus (cordes, larsen) — les sifflantes de la parole sont trop brèves.
+        static let horrorStridenceSustainSeconds = 0.35
+        static let horrorStridenceHeldQuantile = 0.0 // minimum strict : une sifflante ne tient pas
+        static let horrorStridenceGateLow = 0.12, horrorStridenceGateHigh = 0.50
+        static let horrorStridenceGain = 0.35
+
+        // Sursaut (jump scare) : TRÈS au-dessus du programme ET bond net au-dessus de
+        // l'ambiance de la dernière seconde. L'ambiance rattrape le sursaut d'un coup : une
+        // scène bruyante qui dure ne re-déclenche pas (jamais de stroboscope, ~2 Hz max).
+        // Mesuré : frame par frame, la parole ne dépasse jamais 1.5× le niveau de programme.
+        static let horrorShockOverProgram = 3.0      // × le niveau de programme pour déclencher
+        static let horrorShockFullOverProgram = 5.0  // × pour un éclair à pleine force
+        static let horrorShockMinStrength = 0.5
+        static let horrorShockRatio = 2.4            // niveau instantané / ambiance rapide
+        static let horrorShockRefractory = 0.45      // s
+        static let horrorShockWarmup = 2.0           // s sans éclair au démarrage du mode
         static let horrorShockAmbientCatchUp = 0.8
         static let horrorAmbientRiseSeconds = 3.0
         static let horrorAmbientFallSeconds = 1.2
-        static let horrorShockMinStrength = 0.5
-        static let horrorFlashDecayPerSecond = 2.2 // extinction ~450 ms
-        static let horrorFlashDesaturation = 0.9   // l'éclair tire vers le blanc
-        static let horrorFlashReference = 0.30     // réglage « Flash » par défaut = éclair plein
+        static let horrorFlashDecayPerSecond = 2.2   // extinction ~450 ms
+        static let horrorFlashDesaturation = 0.9     // l'éclair tire vers le blanc
+        static let horrorFlashReference = 0.30       // réglage « Flash » par défaut = éclair plein
 
         // Chaleur du son (centroïde) → teinte de base, le long de l'axe thermique
         // bleu → violet → rouge/orange (jamais par le vert). Sans effet avec un thème.
@@ -141,8 +190,17 @@ public struct LightMapper {
     private var flash = 0.0
     private var lastTime: Double?
     private var smoothedWarmth = 0.5
-    private var gains: (rms: AutoGain, bass: AutoGain, mid: AutoGain, high: AutoGain)
-    private var ambientRMS = 0.0            // horreur : ambiance sonore récente
+    private var gains = (rms: AutoGain(), bass: AutoGain(), mid: AutoGain(), high: AutoGain())
+
+    // Film d'horreur (état propre au mode, sur le signal brut).
+    private var programRMS = Tuning.horrorProgramInitial
+    private var ambientRMS = 0.0
+    private var horrorLevel = 0.0
+    private var sustainedBass = SustainTracker(
+        window: Tuning.horrorRumbleSustainSeconds, quantile: Tuning.horrorRumbleHeldQuantile)
+    private var sustainedHigh = SustainTracker(
+        window: Tuning.horrorStridenceSustainSeconds, quantile: Tuning.horrorStridenceHeldQuantile)
+    private var horrorStartTime: Double?
     private var lastShockTime: Double?
     private var smoothedBands: [Role: Double] = [.bass: 0, .mid: 0, .high: 0]
     private var smoothedRMS = 0.0
@@ -159,14 +217,6 @@ public struct LightMapper {
         self.mode = mode
         self.anchors = anchors
         self.tuning = tuning
-        if mode == .horror {
-            let slow = Tuning.horrorGainDecaySeconds
-            gains = (rms: AutoGain(decaySeconds: slow, floor: Tuning.horrorLevelGainFloor),
-                     bass: AutoGain(decaySeconds: slow), mid: AutoGain(decaySeconds: slow),
-                     high: AutoGain(decaySeconds: slow))
-        } else {
-            gains = (rms: AutoGain(), bass: AutoGain(), mid: AutoGain(), high: AutoGain())
-        }
     }
 
     public mutating func map(frame: AnalysisFrame, channels: [SyncChannel], time: Double) -> [ChannelColor] {
@@ -184,7 +234,7 @@ public struct LightMapper {
         let bandRate = switch mode {
         case .club: Tuning.clubBandSmoothingRate
         case .chill: Tuning.chillBandSmoothingRate
-        case .horror: Tuning.horrorBandSmoothingRate
+        case .horror: Tuning.horrorLevelSmoothingRate // inutilisé : le mode travaille sur le brut
         }
         let bandStep = min(1, dt * bandRate)
         smoothedRMS += (normalized.rms - smoothedRMS) * bandStep
@@ -200,7 +250,7 @@ public struct LightMapper {
         let targets = switch mode {
         case .club: mapClub(frame: frame, channels: channels, dt: dt)
         case .chill: mapChill(channels: channels, dt: dt)
-        case .horror: mapHorror(rms: frame.rms, level: normalized.rms, channels: channels, dt: dt, time: time)
+        case .horror: mapHorror(frame: frame, channels: channels, dt: dt, time: time)
         }
         // Lissage de sortie : les sauts de teinte/flash deviennent des transitions,
         // sans tuer l'attaque (montée plus rapide que la descente).
@@ -261,18 +311,41 @@ public struct LightMapper {
     }
 
     private mutating func mapHorror(
-        rms: Double, level: Double, channels: [SyncChannel], dt: Double, time: Double
+        frame: AnalysisFrame, channels: [SyncChannel], dt: Double, time: Double
     ) -> [ChannelColor] {
-        // Sursaut : proche des pics du film ET bond net au-dessus de l'ambiance récente.
+        let rms = frame.rms
+        if horrorStartTime == nil { horrorStartTime = time }
+
+        // Sursaut : très au-dessus du niveau de programme ET bond net sur la dernière seconde.
+        let overProgram = rms / programRMS
         let ambience = max(ambientRMS, Tuning.silenceRMS)
-        if level >= Tuning.horrorShockLevel, rms > ambience * Tuning.horrorShockRatio,
+        if overProgram >= Tuning.horrorShockOverProgram, rms > ambience * Tuning.horrorShockRatio,
+           time - (horrorStartTime ?? time) >= Tuning.horrorShockWarmup,
            time - (lastShockTime ?? -.infinity) > Tuning.horrorShockRefractory {
-            flash = Tuning.horrorShockMinStrength + (1 - Tuning.horrorShockMinStrength) * level
+            let span = Tuning.horrorShockFullOverProgram - Tuning.horrorShockOverProgram
+            let force = min(1, (overProgram - Tuning.horrorShockOverProgram) / span)
+            flash = Tuning.horrorShockMinStrength + (1 - Tuning.horrorShockMinStrength) * force
             lastShockTime = time
             ambientRMS = max(ambientRMS, rms * Tuning.horrorShockAmbientCatchUp)
         }
         let ambientTau = rms > ambientRMS ? Tuning.horrorAmbientRiseSeconds : Tuning.horrorAmbientFallSeconds
         ambientRMS += (rms - ambientRMS) * min(1, dt / ambientTau)
+
+        // Niveau de programme : les pauses ne comptent pas, la montée est lente, la descente très lente.
+        if rms >= programRMS * Tuning.horrorProgramPauseFraction {
+            let tau = rms > programRMS ? Tuning.horrorProgramRiseSeconds : Tuning.horrorProgramFallSeconds
+            programRMS = max(Tuning.horrorProgramFloor, programRMS + (rms - programRMS) * min(1, dt / tau))
+        }
+
+        // Ce qui menace : le niveau au-dessus des dialogues, les basses et les aigus TENUS.
+        horrorLevel += (rms - horrorLevel) * min(1, dt * Tuning.horrorLevelSmoothingRate)
+        let tension = Self.ramp(horrorLevel / programRMS,
+                                from: Tuning.horrorTensionKneeLow, to: Tuning.horrorTensionKneeHigh)
+        let pureBass = max(0, frame.bass - Tuning.horrorVoiceMidFactor * frame.mid)
+        let rumble = Self.ramp(sustainedBass.push(pureBass, at: time),
+                               from: Tuning.horrorRumbleGateLow, to: Tuning.horrorRumbleGateHigh)
+        let stridence = Self.ramp(sustainedHigh.push(frame.high, at: time),
+                                  from: Tuning.horrorStridenceGateLow, to: Tuning.horrorStridenceGateHigh)
 
         rotationClock += dt
         if rotationClock >= Tuning.horrorRotationSeconds {
@@ -287,13 +360,16 @@ public struct LightMapper {
         let hues = anchors.flatMap { $0.isEmpty ? nil : $0 } ?? Tuning.horrorDefaultAnchors
         let saturation = Tuning.horrorSaturation * (1 - Tuning.horrorFlashDesaturation * lightning)
         let ordered = Self.orderedIndices(channels)
-        let dread = pow(smoothedRMS, Tuning.horrorDreadCurve) * Tuning.horrorDreadGain
 
         return channels.indices.map { index in
             let slot = ordered[index]
-            let role = Role.allCases[slot % Role.allCases.count]
-            let glow = Tuning.horrorBaseBrightness
-                + (dread + smoothedBands[role]! * Tuning.horrorRumbleGain) * tuning.sensitivity
+            // Une lampe sur deux ajoute la stridence (et gronde un peu moins) : la pièce ne
+            // réagit pas d'un bloc.
+            let strident = slot % 2 == 1
+            let menace = tension * Tuning.horrorTensionGain
+                + rumble * Tuning.horrorRumbleGain * (strident ? Tuning.horrorRumbleOnStridentLamps : 1)
+                + (strident ? stridence * Tuning.horrorStridenceGain : 0)
+            let glow = Tuning.horrorBaseBrightness + menace * tuning.sensitivity
             // Vacillement d'inquiétude : deux sinus incommensurables, déphasés par lampe
             // (déterministe — le mapper reste rejouable à l'identique).
             let unease = 0.5 + 0.5 * sin(time * 2.3 + Double(slot) * 1.7) * sin(time * 5.9 + Double(slot) * 0.6)
@@ -302,6 +378,11 @@ public struct LightMapper {
             return color(channel: channels[index].id, hue: hues[(slot + rotation) % hues.count],
                          saturation: saturation, value: brightness)
         }
+    }
+
+    /// Rampe linéaire bornée : 0 sous `from`, 1 au-dessus de `to`.
+    private static func ramp(_ value: Double, from low: Double, to high: Double) -> Double {
+        min(1, max(0, (value - low) / (high - low)))
     }
 
     // MARK: - Palette, tempo, teinte

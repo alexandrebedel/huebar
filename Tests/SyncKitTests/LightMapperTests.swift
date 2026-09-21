@@ -65,8 +65,10 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
 
 @Test func steadyMusicReachesUsefulBrightness() {
     // Retour utilisateur : « intensité très faible en mode musique ». Avec un signal
-    // soutenu, chaque channel doit dépasser un niveau clairement visible.
-    for mode in SyncMode.allCases {
+    // soutenu, chaque channel doit dépasser un niveau clairement visible. Modes MUSIQUE
+    // seulement : « Film d'horreur » reste sombre par conception sur un son continu chargé
+    // en mids — c'est ce qui l'empêche de suivre les dialogues (cf. HorrorModeTests).
+    for mode in [SyncMode.club, .chill] {
         var mapper = LightMapper(mode: mode)
         var colors: [ChannelColor] = []
         for i in 0..<150 {
@@ -326,92 +328,4 @@ private func frame(rms: Double = 0.3, bass: Double = 0.4, mid: Double = 0.3,
             #expect(color.red + color.green + color.blue < 0.9)
         }
     }
-}
-
-// MARK: - Mode « Film d'horreur » (réagit au son d'un film, pas à un tempo)
-
-/// Déroule `seconds` de frames identiques à 50 Hz et renvoie toutes les sorties.
-private func run(_ mapper: inout LightMapper, from start: Double, seconds: Double,
-                 _ make: @autoclosure () -> AnalysisFrame) -> [[ChannelColor]] {
-    let count = Int(seconds / 0.02)
-    return (0..<count).map { i in
-        mapper.map(frame: make(), channels: channels, time: start + Double(i) * 0.02)
-    }
-}
-
-private let quietScene = AnalysisFrame(rms: 0.02, bass: 0.03, mid: 0.04, high: 0.02, beat: false)
-private let loudScene = AnalysisFrame(rms: 0.5, bass: 0.7, mid: 0.6, high: 0.5, beat: false)
-
-@Test func horrorStaysDarkOnQuietPassagesEvenAfterALoudOne() {
-    // L'auto-gain lent garde en mémoire les pics du film : le calme qui suit reste SOMBRE
-    // (en Club/Chill il serait remonté en 2,5 s — l'inverse de ce qu'on veut devant un film).
-    var mapper = LightMapper(mode: .horror)
-    _ = run(&mapper, from: 0, seconds: 2, loudScene)
-    let quiet = run(&mapper, from: 2, seconds: 6, quietScene)
-    for colors in quiet.suffix(100) { // 2 dernières secondes : le flash et la lueur sont retombés
-        for color in colors {
-            #expect(color.red + color.green + color.blue < 0.35)
-        }
-    }
-}
-
-@Test func horrorJumpScareFlashesTheWholeRoomWhite() {
-    var mapper = LightMapper(mode: .horror)
-    _ = run(&mapper, from: 0, seconds: 3, quietScene)
-    let scare = run(&mapper, from: 3, seconds: 0.12, loudScene)
-    let peak = scare.last!
-    for color in peak {
-        #expect(color.red > 0.85)
-        // Éclair : tiré vers le blanc (pas un simple rouge plus fort), sur TOUTES les lampes.
-        #expect(min(color.green, color.blue) > 0.6 * color.red)
-    }
-}
-
-@Test func horrorSustainedLoudnessNeverStrobes() {
-    // Scène bruyante qui dure : un seul éclair au début, puis du rouge — jamais de
-    // re-déclenchement en rafale (confort et photosensibilité).
-    var mapper = LightMapper(mode: .horror)
-    _ = run(&mapper, from: 0, seconds: 3, quietScene)
-    let loud = run(&mapper, from: 3, seconds: 5, loudScene)
-    for colors in loud.dropFirst(75) { // après 1,5 s, l'éclair initial est retombé
-        for color in colors {
-            #expect(color.green < 0.35, "re-flash blanc pendant une scène bruyante")
-        }
-    }
-}
-
-@Test func horrorFlashSliderAtZeroDisablesTheLightning() {
-    var mapper = LightMapper(mode: .horror, tuning: SyncTuning(flash: 0))
-    _ = run(&mapper, from: 0, seconds: 3, quietScene)
-    let scare = run(&mapper, from: 3, seconds: 0.5, loudScene)
-    for colors in scare {
-        for color in colors {
-            #expect(color.green < 0.35) // la lueur rouge monte, mais aucun éclair blanc
-        }
-    }
-}
-
-@Test func horrorDefaultsToBloodRedsAndHonoursAThemeOtherwise() {
-    var reds = LightMapper(mode: .horror)
-    var ocean = LightMapper(mode: .horror, anchors: SyncTheme.ocean.hueAnchors)
-    _ = run(&reds, from: 0, seconds: 1, loudScene)   // laisse passer l'éclair d'ouverture
-    _ = run(&ocean, from: 0, seconds: 1, loudScene)
-    let redRoom = run(&reds, from: 1, seconds: 4, loudScene).flatMap { $0 }
-    let blueRoom = run(&ocean, from: 1, seconds: 4, loudScene).flatMap { $0 }
-    #expect(redRoom.reduce(0) { $0 + $1.red } > 3 * redRoom.reduce(0) { $0 + $1.blue })
-    #expect(blueRoom.reduce(0) { $0 + $1.blue } > 2 * blueRoom.reduce(0) { $0 + $1.red })
-}
-
-@Test func horrorIgnoresMusicalBeats() {
-    // Un film n'a pas de tempo : les « beats » de l'analyseur ne font ni flash ni BPM.
-    var mapper = LightMapper(mode: .horror)
-    _ = run(&mapper, from: 0, seconds: 3, loudScene)
-    var outputs: [[ChannelColor]] = []
-    for i in 0..<200 {
-        var frame = loudScene
-        frame.beat = i % 25 == 0
-        outputs.append(mapper.map(frame: frame, channels: channels, time: 3 + Double(i) * 0.02))
-    }
-    #expect(mapper.estimatedBPM == nil)
-    #expect(outputs.allSatisfy { colors in colors.allSatisfy { $0.green < 0.35 } })
 }
