@@ -1,6 +1,7 @@
 import Testing
 @testable import SyncKit
 
-@Test func modesAreClubAndChill() {
-    #expect(SyncMode.allCases == [.club, .chill])
+@Test func modesAreClubChillAndHorror() {
+    #expect(SyncMode.allCases == [.club, .chill, .horror])
+    #expect(SyncMode.horror.label == "Film d'horreur")
 }

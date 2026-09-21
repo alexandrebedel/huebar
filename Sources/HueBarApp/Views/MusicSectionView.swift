@@ -16,6 +16,7 @@ struct MusicSectionView: View {
     @AppStorage("musicTheme") private var themeStorage = SyncTheme.spectre.rawValue
     @AppStorage("musicTuningClub") private var tuningClubStorage = ""
     @AppStorage("musicTuningChill") private var tuningChillStorage = ""
+    @AppStorage("musicTuningHorror") private var tuningHorrorStorage = ""
     @AppStorage("musicCustomThemes") private var customThemesStorage = ""
     @State private var editingTheme: CustomTheme?
     @State private var editingThemeIsNew = false
@@ -51,6 +52,14 @@ struct MusicSectionView: View {
                         modeStorage = mode.rawValue
                     }
                 }
+            }
+            if engine.mode == .horror {
+                Text("Pour un film : la pièce reste sombre, rougeoie avec les grondements et éclate "
+                     + "en éclair blanc sur les sursauts (dosable avec « Flash » dans les réglages fins, "
+                     + "0 = aucun éclair). Thème Spectre = rouges sang ; tout autre thème impose ses couleurs.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Thèmes : la palette de couleurs imposée au mapper, quel que soit le mode.
@@ -131,9 +140,11 @@ struct MusicSectionView: View {
                               help: "Énergie lumineuse globale")
                     tuningRow("Attaque", value: tuningBinding(\.punch), range: 0.5...2,
                               help: "Réactivité aux transitoires (élevé = sec)")
-                    if engine.mode == .club {
+                    if engine.mode != .chill {
                         tuningRow("Flash", value: tuningBinding(\.flash), range: 0...0.6,
-                                  help: "Poids du flash sur les beats")
+                                  help: engine.mode == .horror
+                                      ? "Force de l'éclair sur les sursauts (0 = aucun éclair)"
+                                      : "Poids du flash sur les beats")
                     }
                     HStack {
                         Spacer()
@@ -384,7 +395,11 @@ struct MusicSectionView: View {
     }
 
     private func loadTuning(for mode: SyncMode) -> SyncTuning {
-        let raw = mode == .club ? tuningClubStorage : tuningChillStorage
+        let raw = switch mode {
+        case .club: tuningClubStorage
+        case .chill: tuningChillStorage
+        case .horror: tuningHorrorStorage
+        }
         guard let data = raw.data(using: .utf8),
               let tuning = try? JSONDecoder().decode(SyncTuning.self, from: data) else { return .default }
         return tuning
@@ -393,7 +408,11 @@ struct MusicSectionView: View {
     private func saveTuning(_ tuning: SyncTuning, for mode: SyncMode) {
         guard let data = try? JSONEncoder().encode(tuning) else { return }
         let raw = String(decoding: data, as: UTF8.self)
-        if mode == .club { tuningClubStorage = raw } else { tuningChillStorage = raw }
+        switch mode {
+        case .club: tuningClubStorage = raw
+        case .chill: tuningChillStorage = raw
+        case .horror: tuningHorrorStorage = raw
+        }
     }
 
     private func toggle() async {
@@ -617,14 +636,26 @@ private struct MusicModeCard: View {
         switch mode {
         case .club: [Color(red: 0.55, green: 0.15, blue: 0.95), Color(red: 0.95, green: 0.20, blue: 0.55)]
         case .chill: [Color(red: 0.95, green: 0.60, blue: 0.25), Color(red: 0.85, green: 0.35, blue: 0.45)]
+        case .horror: [Color(red: 0.62, green: 0.02, blue: 0.05), Color(red: 0.12, green: 0.0, blue: 0.10)]
+        }
+    }
+
+    private var icon: String {
+        switch mode {
+        case .club: "waveform.path"
+        case .chill: "moon.stars.fill"
+        case .horror: "popcorn.fill"
         }
     }
 
     var body: some View {
         Button(action: action) {
             HStack {
-                Image(systemName: mode == .club ? "waveform.path" : "moon.stars.fill")
-                Text(mode.label).font(.callout.weight(.semibold))
+                Image(systemName: icon)
+                Text(mode.label)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")

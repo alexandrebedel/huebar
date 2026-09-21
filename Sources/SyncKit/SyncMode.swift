@@ -4,6 +4,8 @@ import Foundation
 public enum SyncMode: String, Sendable, CaseIterable, Identifiable {
     case club
     case chill
+    /// Pour regarder un film : sombre, gronde en rouge, éclate sur les sursauts.
+    case horror
 
     public var id: String { rawValue }
 
@@ -11,6 +13,7 @@ public enum SyncMode: String, Sendable, CaseIterable, Identifiable {
         switch self {
         case .club: "Club"
         case .chill: "Chill"
+        case .horror: "Film d'horreur"
         }
     }
 }

@@ -17,15 +17,24 @@ public struct SyncChannel: Sendable, Equatable {
 /// ramener dans 0...1 quel que soit le volume de la source — le principe du `mel_gain`
 /// de LedFx. Sans ça, un morceau calme est éteint et un morceau fort sature.
 struct AutoGain: Sendable {
-    private var peak = LightMapper.Tuning.gainFloor
+    private let decaySeconds: Double
+    private let floor: Double
+    private var peak: Double
+
+    init(decaySeconds: Double = LightMapper.Tuning.gainDecaySeconds,
+         floor: Double = LightMapper.Tuning.gainFloor) {
+        self.decaySeconds = decaySeconds
+        self.floor = floor
+        self.peak = floor
+    }
 
     mutating func normalize(_ value: Double, dt: Double) -> Double {
         if value > peak {
             peak = value
         } else {
-            peak += (value - peak) * min(1, dt / LightMapper.Tuning.gainDecaySeconds)
+            peak += (value - peak) * min(1, dt / decaySeconds)
         }
-        peak = max(peak, LightMapper.Tuning.gainFloor)
+        peak = max(peak, floor)
         return min(1, value / peak)
     }
 }
@@ -75,6 +84,35 @@ public struct LightMapper {
         static let chillWarmthPullPerSecond = 0.25
         static let chillRotationSeconds = 10.0
 
+        // Film d'horreur : la pièce reste sombre, gronde en rouge avec la bande-son et
+        // éclate en éclair blanc sur les sursauts. Pas de tempo : un film n'a pas de beat.
+        static let horrorGainDecaySeconds = 90.0   // auto-gain LENT : un passage calme reste sombre
+        static let horrorLevelGainFloor = 0.10     // le niveau ne se normalise pas sur du murmure
+        static let horrorBandSmoothingRate = 5.0
+        static let horrorBaseBrightness = 0.035
+        static let horrorDreadGain = 0.45          // lueur qui suit le niveau sonore…
+        static let horrorDreadCurve = 1.6          // …en courbe : les niveaux faibles restent très sombres
+        static let horrorRumbleGain = 0.30         // + la bande propre à la lampe (grondements, cris)
+        static let horrorSaturation = 0.95
+        static let horrorFlickerDepth = 0.25       // vacillement d'inquiétude, par lampe
+        static let horrorRotationSeconds = 20.0
+        static let horrorAttack = 0.03, horrorRelease = 0.45
+        /// Rouges sang et un violet profond ; remplacés par les ancres d'un thème s'il y en a un.
+        static let horrorDefaultAnchors = [0.0, 0.97, 0.02, 0.80]
+        // Sursaut (jump scare) : niveau proche des pics du film ET bond net au-dessus de
+        // l'ambiance récente. L'ambiance rattrape le sursaut d'un coup : une scène bruyante
+        // qui dure ne re-déclenche pas (jamais de stroboscope), et le réfractaire borne à ~2 Hz.
+        static let horrorShockLevel = 0.6          // fraction du pic récent
+        static let horrorShockRatio = 2.4          // niveau instantané / ambiance
+        static let horrorShockRefractory = 0.45    // s
+        static let horrorShockAmbientCatchUp = 0.8
+        static let horrorAmbientRiseSeconds = 3.0
+        static let horrorAmbientFallSeconds = 1.2
+        static let horrorShockMinStrength = 0.5
+        static let horrorFlashDecayPerSecond = 2.2 // extinction ~450 ms
+        static let horrorFlashDesaturation = 0.9   // l'éclair tire vers le blanc
+        static let horrorFlashReference = 0.30     // réglage « Flash » par défaut = éclair plein
+
         // Chaleur du son (centroïde) → teinte de base, le long de l'axe thermique
         // bleu → violet → rouge/orange (jamais par le vert). Sans effet avec un thème.
         static let coldHue = 0.58
@@ -103,7 +141,9 @@ public struct LightMapper {
     private var flash = 0.0
     private var lastTime: Double?
     private var smoothedWarmth = 0.5
-    private var gains = (rms: AutoGain(), bass: AutoGain(), mid: AutoGain(), high: AutoGain())
+    private var gains: (rms: AutoGain, bass: AutoGain, mid: AutoGain, high: AutoGain)
+    private var ambientRMS = 0.0            // horreur : ambiance sonore récente
+    private var lastShockTime: Double?
     private var smoothedBands: [Role: Double] = [.bass: 0, .mid: 0, .high: 0]
     private var smoothedRMS = 0.0
     private var smoothedOutput: [UInt8: (red: Double, green: Double, blue: Double)] = [:]
@@ -119,6 +159,14 @@ public struct LightMapper {
         self.mode = mode
         self.anchors = anchors
         self.tuning = tuning
+        if mode == .horror {
+            let slow = Tuning.horrorGainDecaySeconds
+            gains = (rms: AutoGain(decaySeconds: slow, floor: Tuning.horrorLevelGainFloor),
+                     bass: AutoGain(decaySeconds: slow), mid: AutoGain(decaySeconds: slow),
+                     high: AutoGain(decaySeconds: slow))
+        } else {
+            gains = (rms: AutoGain(), bass: AutoGain(), mid: AutoGain(), high: AutoGain())
+        }
     }
 
     public mutating func map(frame: AnalysisFrame, channels: [SyncChannel], time: Double) -> [ChannelColor] {
@@ -133,7 +181,11 @@ public struct LightMapper {
                gains.bass.normalize(frame.bass, dt: dt),
                gains.mid.normalize(frame.mid, dt: dt),
                gains.high.normalize(frame.high, dt: dt))
-        let bandRate = mode == .club ? Tuning.clubBandSmoothingRate : Tuning.chillBandSmoothingRate
+        let bandRate = switch mode {
+        case .club: Tuning.clubBandSmoothingRate
+        case .chill: Tuning.chillBandSmoothingRate
+        case .horror: Tuning.horrorBandSmoothingRate
+        }
         let bandStep = min(1, dt * bandRate)
         smoothedRMS += (normalized.rms - smoothedRMS) * bandStep
         smoothedBands[.bass]! += (normalized.bass - smoothedBands[.bass]!) * bandStep
@@ -141,13 +193,14 @@ public struct LightMapper {
         smoothedBands[.high]! += (normalized.high - smoothedBands[.high]!) * bandStep
         smoothedWarmth += (frame.warmth - smoothedWarmth) * min(1, dt * Tuning.warmthSmoothingRate)
 
-        if frame.beat, !silent {
+        if frame.beat, !silent, mode != .horror {
             registerBeat(at: time)
         }
 
         let targets = switch mode {
         case .club: mapClub(frame: frame, channels: channels, dt: dt)
         case .chill: mapChill(channels: channels, dt: dt)
+        case .horror: mapHorror(rms: frame.rms, level: normalized.rms, channels: channels, dt: dt, time: time)
         }
         // Lissage de sortie : les sauts de teinte/flash deviennent des transitions,
         // sans tuer l'attaque (montée plus rapide que la descente).
@@ -207,6 +260,50 @@ public struct LightMapper {
         }
     }
 
+    private mutating func mapHorror(
+        rms: Double, level: Double, channels: [SyncChannel], dt: Double, time: Double
+    ) -> [ChannelColor] {
+        // Sursaut : proche des pics du film ET bond net au-dessus de l'ambiance récente.
+        let ambience = max(ambientRMS, Tuning.silenceRMS)
+        if level >= Tuning.horrorShockLevel, rms > ambience * Tuning.horrorShockRatio,
+           time - (lastShockTime ?? -.infinity) > Tuning.horrorShockRefractory {
+            flash = Tuning.horrorShockMinStrength + (1 - Tuning.horrorShockMinStrength) * level
+            lastShockTime = time
+            ambientRMS = max(ambientRMS, rms * Tuning.horrorShockAmbientCatchUp)
+        }
+        let ambientTau = rms > ambientRMS ? Tuning.horrorAmbientRiseSeconds : Tuning.horrorAmbientFallSeconds
+        ambientRMS += (rms - ambientRMS) * min(1, dt / ambientTau)
+
+        rotationClock += dt
+        if rotationClock >= Tuning.horrorRotationSeconds {
+            rotationClock = 0
+            rotation += 1
+        }
+
+        // Le réglage « Flash » dose l'éclair (0 = aucun flash, défaut = éclair plein).
+        let lightning = flash * min(1, tuning.flash / Tuning.horrorFlashReference)
+        flash = max(0, flash - dt * Tuning.horrorFlashDecayPerSecond)
+
+        let hues = anchors.flatMap { $0.isEmpty ? nil : $0 } ?? Tuning.horrorDefaultAnchors
+        let saturation = Tuning.horrorSaturation * (1 - Tuning.horrorFlashDesaturation * lightning)
+        let ordered = Self.orderedIndices(channels)
+        let dread = pow(smoothedRMS, Tuning.horrorDreadCurve) * Tuning.horrorDreadGain
+
+        return channels.indices.map { index in
+            let slot = ordered[index]
+            let role = Role.allCases[slot % Role.allCases.count]
+            let glow = Tuning.horrorBaseBrightness
+                + (dread + smoothedBands[role]! * Tuning.horrorRumbleGain) * tuning.sensitivity
+            // Vacillement d'inquiétude : deux sinus incommensurables, déphasés par lampe
+            // (déterministe — le mapper reste rejouable à l'identique).
+            let unease = 0.5 + 0.5 * sin(time * 2.3 + Double(slot) * 1.7) * sin(time * 5.9 + Double(slot) * 0.6)
+            let flicker = 1 - Tuning.horrorFlickerDepth * unease
+            let brightness = min(1, min(1, glow) * flicker + lightning)
+            return color(channel: channels[index].id, hue: hues[(slot + rotation) % hues.count],
+                         saturation: saturation, value: brightness)
+        }
+    }
+
     // MARK: - Palette, tempo, teinte
 
     /// Teintes disponibles pour les lampes : les ancres du thème, ou — en spectre libre —
@@ -263,9 +360,11 @@ public struct LightMapper {
     /// EMA asymétrique par composante : l'attaque garde le punch des beats,
     /// la descente évite les flips secs de couleur.
     private mutating func smoothedColor(_ target: ChannelColor, dt: Double) -> ChannelColor {
-        var (tauUp, tauDown) = mode == .club
-            ? (Tuning.clubAttack, Tuning.clubRelease)
-            : (Tuning.chillAttack, Tuning.chillRelease)
+        var (tauUp, tauDown) = switch mode {
+        case .club: (Tuning.clubAttack, Tuning.clubRelease)
+        case .chill: (Tuning.chillAttack, Tuning.chillRelease)
+        case .horror: (Tuning.horrorAttack, Tuning.horrorRelease)
+        }
         tauUp /= max(0.1, tuning.punch) // punch élevé = attaque plus sèche
         guard let previous = smoothedOutput[target.channel] else {
             smoothedOutput[target.channel] = (target.red, target.green, target.blue)
