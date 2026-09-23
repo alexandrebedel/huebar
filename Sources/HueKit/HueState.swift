@@ -191,8 +191,7 @@ public final class HueState {
     /// animait et que la scène fige : leur effet est à couper avant le recall.
     @discardableResult
     func applySceneActionsLocally(id: String) -> [String] {
-        let scene = rooms.flatMap(\.scenes).first { $0.id == id } ?? all?.scenes.first { $0.id == id }
-        guard let actions = scene?.actions, !actions.isEmpty else { return [] }
+        guard let actions = scene(id: id)?.actions, !actions.isEmpty else { return [] }
         var effectsToStop: [String] = []
         let bodiesByLightID = Dictionary(
             actions.compactMap { action in action.target.map { ($0.rid, action.action) } },
@@ -244,6 +243,34 @@ public final class HueState {
         await perform { client in
             try await client.setSceneSpeed(id: id, speed: speed)
         }
+    }
+
+    /// Réécrit l'effet d'une scène animée (type, vitesse, luminosité) puis la rejoue : on
+    /// règle en regardant les lampes. Reflet local immédiat, comme un recall ; les actions
+    /// partent AVANT le recall, sinon les lampes rejoueraient l'ancien réglage.
+    public func updateSceneEffect(id: String, _ settings: SceneEffectSettings) async {
+        guard let actions = scene(id: id)?.actions, !actions.isEmpty else { return }
+        let updated = settings.applied(to: actions)
+        for roomIndex in rooms.indices {
+            if let sceneIndex = rooms[roomIndex].scenes.firstIndex(where: { $0.id == id }) {
+                rooms[roomIndex].scenes[sceneIndex].actions = updated
+            }
+        }
+        if var zone = all, let sceneIndex = zone.scenes.firstIndex(where: { $0.id == id }) {
+            zone.scenes[sceneIndex].actions = updated
+            all = zone
+        }
+        markSceneActive(id: id)
+        let running = applySceneActionsLocally(id: id)
+        await perform { client in
+            try await client.updateSceneActions(id: id, actions: updated)
+            try await Self.stopEffects(on: running, with: client)
+            try await client.recallScene(id: id)
+        }
+    }
+
+    private func scene(id: String) -> HueScene? {
+        rooms.flatMap(\.scenes).first { $0.id == id } ?? all?.scenes.first { $0.id == id }
     }
 
     /// La scène rappelée devient active, les autres scènes du même groupe inactives.

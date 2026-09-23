@@ -24,6 +24,9 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     private(set) var createdScenes: [(name: String, groupID: String, actions: [SceneAction], palette: ScenePalette?)] = []
     private(set) var deletedScenes: [String] = []
     private(set) var renames: [(resource: String, id: String, name: String)] = []
+    private(set) var sceneActionUpdates: [(id: String, actions: [SceneAction])] = []
+    /// Ordre des écritures sur les scènes (réécriture puis recall, pas l'inverse).
+    private(set) var sceneCalls: [String] = []
 
     private func failIfNeeded() throws {
         if shouldFail { throw HueError.invalidResponse }
@@ -50,6 +53,12 @@ final class FakeClient: HueControlling, @unchecked Sendable {
         sceneSpeeds.append((id, speed))
     }
 
+    func updateSceneActions(id: String, actions: [SceneAction]) async throws {
+        try failIfNeeded()
+        sceneActionUpdates.append((id, actions))
+        sceneCalls.append("actions:\(id)")
+    }
+
     func deleteScene(id: String) async throws {
         try failIfNeeded()
         deletedScenes.append(id)
@@ -73,6 +82,7 @@ final class FakeClient: HueControlling, @unchecked Sendable {
     func recallScene(id: String) async throws {
         try failIfNeeded()
         recalledScenes.append(id)
+        sceneCalls.append("recall:\(id)")
     }
 
     func renameLight(id: String, name: String) async throws {

@@ -72,6 +72,14 @@ public final class HueClient: HueControlling, EntertainmentControlling, Sendable
                            body: try encode(Body(speed: speed)))
     }
 
+    /// Réécrit les actions d'une scène : la liste complète, une action par lampe de la
+    /// pièce (le bridge refuse une scène qui n'en cible qu'une partie).
+    public func updateSceneActions(id: String, actions: [SceneAction]) async throws {
+        struct Body: Encodable { let actions: [SceneAction] }
+        _ = try await send("PUT", "/clip/v2/resource/scene/\(id)",
+                           body: try encode(Body(actions: actions)))
+    }
+
     public func deleteScene(id: String) async throws {
         _ = try await send("DELETE", "/clip/v2/resource/scene/\(id)", body: nil)
     }

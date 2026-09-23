@@ -618,3 +618,81 @@ private func makeEffectState(running effect: String) async -> (HueState, FakeCli
     #expect(state.rooms[0].lights[1].activeEffect == "fire")
     _ = fake
 }
+
+// MARK: - Réglage de l'effet d'une scène (type, vitesse, luminosité)
+
+private func horrorScene(lights: [Light]) throws -> HueScene {
+    let horror = try #require(SceneGallery.scenarios.first { $0.name == "Film d'horreur" })
+    return HueScene(
+        id: "SC7", metadata: Metadata(name: "Film d'horreur"), group: ref("R1", "room"),
+        actions: SceneGallery.actions(for: horror, lights: lights))
+}
+
+@Test func effectSettingsReadTheSceneAndRewriteEveryAnimatedLamp() throws {
+    let scene = try horrorScene(lights: [v2Light(), v2Light(id: "L2", device: "D2")])
+    #expect(SceneEffectSettings(scene: scene) == SceneEffectSettings(effect: "candle", speed: 0.5, brightness: 14))
+    #expect(SceneEffectSettings.hasSpeed(scene))
+
+    let actions = scene.actions ?? []
+    let tuned = SceneEffectSettings(effect: "fire", speed: 0.4, brightness: 20).applied(to: actions)
+    #expect(tuned.count == 2)
+    for (before, after) in zip(actions, tuned) {
+        let command = try #require(after.action.effectsV2?.action)
+        #expect(command.effect == "fire")
+        #expect(command.parameters?.speed == 0.4)
+        #expect(command.parameters?.color == before.action.effectsV2?.action?.parameters?.color) // teinte gardée
+        #expect(after.action.dimming?.brightness == 20)
+        #expect(after.action.color == nil) // jamais de couleur à côté d'un effet
+        #expect(after.target == before.target)
+    }
+    // Une scène fixe n'a rien à régler.
+    #expect(SceneEffectSettings(scene: HueScene(id: "S", metadata: Metadata(name: "X"), group: ref("R1", "room"))) == nil)
+}
+
+@Test func effectSettingsLeaveFixedLampsAloneAndGiveV1EffectsNoSpeed() {
+    let actions = [
+        SceneAction(action: .init(on: OnState(on: true), dimming: Dimming(brightness: 60),
+                                  effects: LightEffects(effect: "fire")), target: ref("L1", "light")),
+        SceneAction(action: .init(on: OnState(on: true), dimming: Dimming(brightness: 60),
+                                  color: ColorState(xy: XY(x: 0.5, y: 0.4))), target: ref("L2", "light")),
+        SceneAction(action: .init(on: OnState(on: false)), target: ref("L3", "light")),
+    ]
+    let scene = HueScene(id: "S", metadata: Metadata(name: "Feu de camp"), group: ref("R1", "room"), actions: actions)
+    #expect(!SceneEffectSettings.hasSpeed(scene)) // l'ancien `effects` n'a pas de vitesse
+
+    let tuned = SceneEffectSettings(effect: "candle", speed: 0.9, brightness: 30).applied(to: actions)
+    #expect(tuned[0].action.effects == LightEffects(effect: "candle"))
+    #expect(tuned[0].action.effectsV2 == nil)
+    #expect(tuned[1].action.color == actions[1].action.color) // lampe fixe : même couleur…
+    #expect(tuned[1].action.effectName == nil)
+    #expect(tuned[1].action.dimming?.brightness == 30)         // …à la luminosité de la scène
+    #expect(tuned[2] == actions[2])                            // lampe éteinte : intacte
+}
+
+@Test func onlyEffectsEveryAnimatedLampCanPlayAreOffered() throws {
+    // Le lightstrip sait jouer « underwater », pas le Hue go : le bridge refuserait la scène.
+    var strip = v2Light(id: "L2", device: "D2")
+    let stripEffects = allEffects + ["underwater", "cosmos"]
+    strip.effectsV2 = LightEffectsV2(
+        action: .init(effect: nil, effectValues: stripEffects),
+        status: .init(effect: "no_effect", effectValues: stripEffects))
+    let scene = try horrorScene(lights: [v2Light(), strip])
+    #expect(SceneEffectSettings.availableEffects(for: scene, lights: [v2Light(), strip])
+            == ["candle", "fire", "prism", "sparkle", "opal", "glisten"])
+}
+
+@MainActor
+@Test func tuningASceneEffectRewritesItsActionsThenReplaysIt() async throws {
+    let (state, fake) = await makeEffectState(running: "no_effect")
+    state.rooms[0].scenes = [try horrorScene(lights: state.rooms[0].lights)]
+
+    await state.updateSceneEffect(id: "SC7", SceneEffectSettings(effect: "fire", speed: 0.4, brightness: 20))
+
+    #expect(fake.sceneCalls == ["actions:SC7", "recall:SC7"]) // réécrite AVANT d'être rejouée
+    let sent = try #require(fake.sceneActionUpdates.first?.actions)
+    #expect(sent.count == 2) // toutes les lampes de la pièce, sinon 400
+    #expect(sent.allSatisfy { $0.action.effectsV2?.action?.effect == "fire" })
+    #expect(state.rooms[0].scenes[0].actions == sent) // le modèle suit : le réglage se rouvre à jour
+    #expect(state.rooms[0].scenes[0].isActive)
+    #expect(state.rooms[0].lights.allSatisfy { $0.activeEffect == "fire" && $0.dimming?.brightness == 20 })
+}

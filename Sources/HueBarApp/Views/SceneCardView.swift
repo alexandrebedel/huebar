@@ -24,6 +24,7 @@ struct SceneCardView: View {
     @State private var hovering = false
     @State private var renaming = false
     @State private var newName = ""
+    @State private var tuningEffect = false
 
     var body: some View {
         Button {
@@ -95,6 +96,10 @@ struct SceneCardView: View {
                 }
                 Divider()
             }
+            if SceneEffectSettings(scene: scene) != nil {
+                Button("Régler l'effet…") { tuningEffect = true }
+                Divider()
+            }
             Button("Renommer la scène…") {
                 newName = scene.metadata.name
                 renaming = true
@@ -105,6 +110,16 @@ struct SceneCardView: View {
         }
         .renameAlert("Renommer la scène", isPresented: $renaming, name: $newName) { name in
             Task { await state.renameScene(id: scene.id, name: name) }
+        }
+        .popover(isPresented: $tuningEffect, arrowEdge: .bottom) {
+            if let settings = SceneEffectSettings(scene: scene) {
+                SceneEffectEditor(
+                    sceneID: scene.id, sceneName: scene.metadata.name,
+                    effects: SceneEffectSettings.availableEffects(
+                        for: scene, lights: state.rooms.flatMap(\.lights)),
+                    hasSpeed: SceneEffectSettings.hasSpeed(scene),
+                    state: state, settings: settings)
+            }
         }
     }
 

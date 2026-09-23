@@ -70,6 +70,21 @@ struct HueClientTests {
         try await makeClient().setSceneSpeed(id: "S1", speed: 0.25)
     }
 
+    @Test func updateSceneActionsPutsTheFullActionList() async throws {
+        MockURLProtocol.handler = { request in
+            #expect(request.url?.absoluteString == "https://192.168.1.134/clip/v2/resource/scene/S1")
+            #expect(request.httpMethod == "PUT")
+            let body = String(data: request.bodyData ?? Data(), encoding: .utf8)
+            // Forme validée en réel sur le bridge (PUT de « Film d'horreur »).
+            #expect(body == #"{"actions":[{"action":{"dimming":{"brightness":14},"effects_v2":{"action":{"effect":"candle","parameters":{"speed":0.5}}},"on":{"on":true}},"target":{"rid":"L1","rtype":"light"}}]}"#)
+            return self.ok(request, #"{"errors":[],"data":[]}"#)
+        }
+        try await makeClient().updateSceneActions(id: "S1", actions: [SceneAction(
+            action: .init(on: OnState(on: true), dimming: Dimming(brightness: 14),
+                          effectsV2: LightEffectsV2(effect: "candle", speed: 0.5)),
+            target: ResourceRef(rid: "L1", rtype: "light"))])
+    }
+
     @Test func createSceneEncodesPaletteWithEmptyRequiredArrays() async throws {
         MockURLProtocol.handler = { request in
             #expect(request.httpMethod == "POST")
