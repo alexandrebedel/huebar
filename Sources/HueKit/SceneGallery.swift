@@ -117,10 +117,11 @@ public enum SceneGallery {
             .init(1, 0.35, 0.05), .init(1, 0.18, 0.04), .init(1, 0.55, 0.12), .init(0.95, 0.12, 0.02),
         ]), brightness: 65, effect: "fire"),
         // Soirée film d'horreur : tout est TAMISÉ (la pièce ne doit pas laver l'écran).
-        // Rouge sang qui vacille lentement : bougie teintée par la palette (effects_v2).
+        // Rouge sang qui scintille : bougie teintée par la palette (effects_v2). Réglé en
+        // réel : à 0.25 le vacillement ne se voyait pas à 14 %, à 0.8 il bougeait trop vite.
         .init(name: "Film d'horreur", kind: .palette([
             .init(1, 0.05, 0.02), .init(0.85, 0, 0.05), .init(1, 0.10, 0), .init(0.70, 0, 0.12),
-        ]), brightness: 14, effect: "candle", tintsEffect: true, effectSpeed: 0.25, category: .horror),
+        ]), brightness: 14, effect: "candle", tintsEffect: true, effectSpeed: 0.5, category: .horror),
         // Vraies bougies (couleur naturelle de l'effet) dans une grande maison vide.
         .init(name: "Manoir hanté", kind: .palette([
             .init(1, 0.62, 0.22), .init(1, 0.55, 0.15), .init(0.95, 0.68, 0.30), .init(1, 0.50, 0.12),

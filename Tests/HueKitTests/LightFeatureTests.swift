@@ -461,7 +461,7 @@ private func v2Light(id: String = "L1", device: String = "D1", running effect: S
     let tinted = try #require(actions[0].action.effectsV2?.action)
     #expect(tinted.effect == "candle")
     #expect(tinted.parameters?.color == ColorState(xy: HueColor.xy(red: 1, green: 0.05, blue: 0.02)))
-    #expect(tinted.parameters?.speed == 0.25)
+    #expect(tinted.parameters?.speed == 0.5) // réglé en réel : 0.25 invisible, 0.8 trop rapide
     #expect(actions[0].action.color == nil)   // la couleur vit DANS l'effet
     #expect(actions[0].action.effects == nil)
     #expect(actions[0].action.dimming?.brightness == 14)
